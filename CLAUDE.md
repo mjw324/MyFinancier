@@ -68,6 +68,9 @@ src/
 ```
 
 ### Key Conventions
+
+@AGENTS.md
+
 - **Server Components by default.** Only add "use client" when interactivity is needed.
 - **Server Actions for mutations** in dashboard pages. API routes only for:
   - Plaid webhooks (must be POST endpoints)
