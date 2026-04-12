@@ -3,6 +3,7 @@ import { getSessionCookie } from "better-auth/cookies";
 
 import {
   apiAuthPrefix,
+  apiPlaidWebhookPrefix,
   authRoutes,
   DEFAULT_LOGIN_REDIRECT,
   publicRoutes,
@@ -20,6 +21,13 @@ export async function proxy(request: NextRequest) {
   };
 
   if (isApiAuth) {
+    return NextResponse.next();
+  }
+
+  const isPlaidWebhook = request.nextUrl.pathname.startsWith(
+    apiPlaidWebhookPrefix,
+  );
+  if (isPlaidWebhook) {
     return NextResponse.next();
   }
 
