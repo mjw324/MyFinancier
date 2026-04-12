@@ -1,114 +1,130 @@
-# CLAUDE.md
+# BudgetApp — Personal Finance Application
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+## Project Overview
+A personal finance / budgeting web application that connects to users' bank accounts
+via Plaid, syncs transactions, and provides budgeting tools and spending visualizations.
 
-## Development Commands
+## Tech Stack
+- **Framework**: Next.js 16 (App Router) with TypeScript
+- **Auth**: Better Auth with Drizzle adapter (already configured from starter template)
+- **Database**: Supabase PostgreSQL via Drizzle ORM
+- **UI**: Tailwind CSS + shadcn/ui
+- **Charts**: Recharts
+- **Bank Integration**: Plaid API (plaid-node SDK)
+- **Hosting**: Railway
 
-### Core Development
-- `pnpm install` - Install dependencies
-- `pnpm run dev` - Start development server (localhost:3000)
-- `pnpm run build` - Build the application
-- `pnpm run start` - Start production server
-- `pnpm run lint` - Run ESLint
+## Architecture Principles
 
-### Database Operations
-- `pnpm run db:generate` - Generate Drizzle schema files
-- `pnpm run db:push` - Push schema changes to Neon database
-- `pnpm run db:studio` - Open Drizzle Studio
-- `pnpm run db:migrate` - Run migrations
-- `pnpm run db:pull` - Pull schema from database
-- `npx @better-auth/cli generate` - Generate Better Auth schema (copy to schema.ts)
+### Folder Structure Convention
+All application code lives under `src/`. Follow this layout:
 
-## Architecture Overview
-
-### Application Structure
-This is a Next.js 15 application using the App Router with Better Auth for authentication and a canvas-based visual editor.
-
-**Key Directories:**
-- `src/app/` - Next.js App Router pages and API routes
-- `src/components/` - React components organized by feature
-- `src/lib/` - Utility functions and configurations
-- `src/db/` - Database schema and connection (Drizzle ORM + Neon PostgreSQL)
-- `src/hooks/` - Custom React hooks
-- `src/server/` - Server-side utilities
-
-### Authentication System
-- **Better Auth** with Drizzle adapter
-- Social providers: Google, GitHub
-- Magic link authentication via Resend
-- Anonymous authentication support
-- Database tables: `user`, `session`, `account`
-
-### Canvas Editor Architecture
-The core feature is a visual canvas editor located in `src/components/dashboard/canvas/`:
-
-**Canvas Components:**
-- `canvas-designer.tsx` - Main layout container with sidebars
-- `canvas-area.tsx` - Interactive drawing canvas with component positioning
-- `canvas-context.tsx` - React Context for canvas state management
-- `component-library.tsx` - Draggable component palette
-- `properties-panel.tsx` - Component property editor
-- `template-selector.tsx` - Pre-built template selection
-- `toolbar.tsx` - Canvas tools and actions
-
-**Canvas State Management:**
-- Uses React Context + useReducer pattern
-- State includes: components array, selection, canvas dimensions, zoom/pan, history
-- Component types: button, text, input, image
-- Each component has: id, type, position (x,y), dimensions, properties
-
-### UI Framework
-- **Tailwind CSS** with custom theming
-- **Radix UI** primitives via Shadcn/ui components
-- **Next Themes** for dark/light mode support
-- Custom theme colors: Dark mode uses #171717 backgrounds, #292929 borders
-
-### Database Schema
-- PostgreSQL via Neon with Drizzle ORM
-- Authentication tables managed by Better Auth
-- User management with role-based access
-
-## Environment Setup
-
-Required environment variables:
 ```
-DATABASE_URL=          # Neon PostgreSQL connection
-BETTER_AUTH_SECRET=    # Better Auth secret key
-BETTER_AUTH_URL=       # Base URL (http://localhost:3000 for dev)
-GOOGLE_CLIENT_ID=      # Google OAuth credentials
-GOOGLE_CLIENT_SECRET=
-GITHUB_CLIENT_ID=      # GitHub OAuth credentials  
-GITHUB_CLIENT_SECRET=
-RESEND_API_KEY=        # Email service for magic links
+src/
+├── app/                    # Next.js App Router (pages + API routes)
+│   ├── (auth)/             # Route group: login, register, forgot-password
+│   ├── (dashboard)/        # Route group: authenticated app pages
+│   │   ├── layout.tsx      # Dashboard shell (sidebar, nav)
+│   │   ├── page.tsx        # Dashboard home / overview
+│   │   ├── accounts/       # Bank accounts list + detail
+│   │   ├── transactions/   # Transaction list, search, filter
+│   │   ├── budgets/        # Budget creation and tracking
+│   │   └── settings/       # User settings, linked accounts management
+│   └── api/
+│       ├── auth/           # Better Auth API route (already exists)
+│       ├── plaid/          # Plaid Link token, exchange, webhooks
+│       └── trpc/           # (optional) if using tRPC later
+├── components/
+│   ├── ui/                 # shadcn/ui components (already exists)
+│   ├── layout/             # Shell, sidebar, nav, header
+│   ├── charts/             # Recharts wrapper components
+│   └── features/           # Domain-specific components
+│       ├── accounts/
+│       ├── transactions/
+│       └── budgets/
+├── lib/
+│   ├── db/
+│   │   ├── schema/         # Drizzle schema files, one per domain
+│   │   │   ├── auth.ts     # Better Auth tables (already exists)
+│   │   │   ├── plaid.ts    # plaid_items, plaid_accounts
+│   │   │   ├── transactions.ts
+│   │   │   ├── budgets.ts
+│   │   │   └── index.ts    # Re-exports all schemas
+│   │   ├── queries/        # Reusable query functions by domain
+│   │   ├── migrations/     # Drizzle migration files
+│   │   └── index.ts        # Drizzle client instance
+│   ├── plaid/
+│   │   ├── client.ts       # Plaid client initialization
+│   │   ├── sync.ts         # Transaction sync logic (cursor-based)
+│   │   ├── link.ts         # Link token creation helpers
+│   │   └── types.ts        # App-level Plaid types (NOT raw Plaid SDK types)
+│   ├── auth/               # Better Auth config (already exists, may need extending)
+│   └── utils/              # Shared utilities (formatting, date helpers, encryption)
+├── hooks/                  # React hooks (useAccounts, useBudget, etc.)
+├── types/                  # Shared TypeScript types/interfaces
+│   ├── api.ts              # API response shapes
+│   ├── transactions.ts
+│   └── budgets.ts
+└── middleware.ts            # Auth middleware (already exists from template)
 ```
 
-## Development Patterns
+### Key Conventions
+- **Server Components by default.** Only add "use client" when interactivity is needed.
+- **Server Actions for mutations** in dashboard pages. API routes only for:
+  - Plaid webhooks (must be POST endpoints)
+  - Plaid Link token exchange (client-side Plaid Link calls back to your server)
+  - Any endpoint that external services call into
+- **Colocation**: Keep page-specific components in `_components/` subdirectories within
+  route folders when they're only used by that page.
+- **No raw Plaid types in the frontend.** The `lib/plaid/` module transforms Plaid SDK
+  responses into app-level types before they reach components.
 
-### Theme Awareness
-Canvas components use the `useTheme` hook from 'next-themes' to adapt to dark/light modes. Always check `resolvedTheme` and apply conditional styling.
+### Database Schema Notes
+- Better Auth tables (user, session, account, verification) are already defined.
+  Do NOT modify these — extend with new tables that reference `user.id`.
+- All financial tables use `userId` as a foreign key to Better Auth's `user` table.
+- `plaid_items` stores access tokens — these MUST be encrypted at rest using
+  AES-256-GCM via the ENCRYPTION_KEY env var. Never store plaintext access tokens.
+- Transactions use Plaid's `transaction_id` as a unique constraint for deduplication
+  during sync operations.
+- Use Drizzle's `timestamp` with `{ mode: 'date' }` for all date columns.
 
-### Component Structure
-- Server Components by default (Next.js 15)
-- Client Components only when needed for interactivity
-- TypeScript interfaces for all component props
-- Functional components with descriptive naming
+### Plaid Integration Pattern
+- Use Plaid's **Transaction Sync** (not legacy `/transactions/get`).
+- Store the sync cursor per `plaid_item` so incremental syncs are efficient.
+- Webhooks trigger background sync — the webhook endpoint validates the
+  Plaid-Verification header, then calls the sync function.
+- Link flow: server creates link token → client opens Plaid Link →
+  client sends public_token to server → server exchanges for access_token →
+  server stores encrypted access_token in plaid_items → server triggers
+  initial sync.
 
-### Canvas Development
-- Canvas state is managed through `CanvasContext`
-- Components are positioned absolutely with x,y coordinates
-- All canvas interactions go through the context reducer
-- Theme-aware colors for all canvas elements and UI panels
+### API Response Convention
+All API routes return a consistent shape:
+```typescript
+type ApiResponse<T> = 
+  | { success: true; data: T }
+  | { success: false; error: string }
+```
+Use zod for input validation on every API route and server action.
 
-## Package Management
-- Uses **pnpm** as package manager
-- Shadcn/ui components: `npx shadcn@latest add [component]`
-- Better Auth CLI for schema generation
+### Error Handling
+- Plaid errors must be caught and mapped to user-friendly messages.
+  Never expose raw Plaid error objects to the client.
+- Use a global error boundary at the dashboard layout level.
+- Log Plaid errors with the item ID but NEVER log access tokens.
 
-## Current Features
-- Multi-layout dashboard with authentication
-- Visual canvas editor for UI design
-- Component library with drag-and-drop
-- Properties panel for component editing
-- Template system for pre-built layouts
-- Theme switching with custom brand colors
-- User management and role-based access
+### Environment Variables
+Required (add to `.env.local` and Railway):
+- `DATABASE_URL` — Supabase PostgreSQL connection string
+- `BETTER_AUTH_SECRET` — Auth secret (from template)
+- `BETTER_AUTH_URL` — App URL (from template)
+- `PLAID_CLIENT_ID` — From Plaid dashboard
+- `PLAID_SECRET` — Plaid secret (sandbox vs production)
+- `PLAID_ENV` — "sandbox" | "production"
+- `PLAID_WEBHOOK_URL` — Public webhook URL (ngrok for local dev)
+- `ENCRYPTION_KEY` — 32-byte hex string for AES-256-GCM encryption of access tokens
+
+### Deployment (Railway)
+- Use standalone Next.js output mode with a multi-stage Dockerfile.
+- Set all env vars in Railway dashboard.
+- Plaid webhook URL must point to the Railway domain.
