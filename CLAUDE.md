@@ -1,4 +1,4 @@
-# BudgetApp — Personal Finance Application
+# MyFinancier — Personal Finance Application
 
 ## Project Overview
 A personal finance / budgeting web application that connects to users' bank accounts

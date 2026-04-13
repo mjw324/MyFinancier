@@ -15,7 +15,7 @@ export async function createLinkToken(
   userId: string,
 ): Promise<LinkTokenResponse> {
   const response = await plaidClient.linkTokenCreate({
-    client_name: "BudgetApp",
+    client_name: "MyFinancier",
     language: "en",
     country_codes: [CountryCode.Us],
     user: { client_user_id: userId },
@@ -89,7 +89,7 @@ export async function createUpdateLinkToken(
   const decryptedToken = decrypt(item.accessToken);
 
   const response = await plaidClient.linkTokenCreate({
-    client_name: "BudgetApp",
+    client_name: "MyFinancier",
     language: "en",
     country_codes: [CountryCode.Us],
     user: { client_user_id: userId },
