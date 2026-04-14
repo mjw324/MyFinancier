@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm";
-import { user, session, account } from "./auth";
+import { user, session, account, twoFactor } from "./auth";
 import { plaidItems } from "./plaid";
 import { financialAccounts } from "./accounts";
 import { transactions } from "./transactions";
@@ -14,6 +14,14 @@ export const userRelations = relations(user, ({ many }) => ({
   transactions: many(transactions),
   categories: many(categories),
   budgets: many(budgets),
+  twoFactors: many(twoFactor),
+}));
+
+export const twoFactorRelations = relations(twoFactor, ({ one }) => ({
+  user: one(user, {
+    fields: [twoFactor.userId],
+    references: [user.id],
+  }),
 }));
 
 export const sessionRelations = relations(session, ({ one }) => ({

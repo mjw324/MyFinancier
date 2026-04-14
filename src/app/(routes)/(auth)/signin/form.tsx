@@ -40,6 +40,8 @@ export default function SignInForm() {
       if (response.error) {
         console.log("SIGN_IN:", response.error.message);
         toast.error(response.error.message);
+      } else if (response.data && "twoFactorRedirect" in response.data) {
+        // 2FA redirect handled by twoFactorClient's onTwoFactorRedirect
       } else {
         router.push("/");
       }

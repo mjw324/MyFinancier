@@ -23,6 +23,8 @@ export function StatCards({
   rangeLabel,
 }: StatCardsProps) {
   const stats = [
+    // TODO: One extra line insights for net worth, income, and expenses
+    // This could be rolling average/how these markers has changed since last period
     {
       title: "Net Worth",
       value: formatCurrency(netWorth),
@@ -43,6 +45,7 @@ export function StatCards({
       icon: TrendingDown,
       gradient: "from-rose-500 to-red-700",
     },
+    // TODO: Make Accounts have icons referring to the first 5 accounts, icons/colors should be relevant (different bank companies, etc)
     {
       title: "Accounts",
       value: accountCount.toString(),

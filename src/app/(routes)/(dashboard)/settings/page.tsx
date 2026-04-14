@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { PlaidLinkButton } from "@/components/features/accounts/plaid-link-button";
 import { UnlinkAccountDialog } from "@/components/features/settings/unlink-account-dialog";
+import { TwoFactorCard } from "@/components/features/settings/two-factor-card";
 import { formatRelativeDate } from "@/lib/utils/format";
 
 export const metadata: Metadata = {
@@ -46,6 +47,8 @@ export default async function SettingsPage() {
           </div>
         </CardContent>
       </Card>
+
+      <TwoFactorCard twoFactorEnabled={user.twoFactorEnabled ?? false} />
 
       <Card>
         <CardHeader>
