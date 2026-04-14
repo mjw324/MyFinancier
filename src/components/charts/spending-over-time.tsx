@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import {
   Area,
@@ -78,6 +78,23 @@ export function SpendingOverTime({ data }: SpendingOverTimeProps) {
     setSelectEnd(null);
   }, []);
 
+  const selectionRange = useMemo(() => {
+    if (!selectStart || !selectEnd || selectStart === selectEnd) return null;
+
+    const [from, to] =
+      selectStart <= selectEnd ? [selectStart, selectEnd] : [selectEnd, selectStart];
+
+    const total = data
+      .filter((d) => d.rawDate >= from && d.rawDate <= to)
+      .reduce((sum, d) => sum + d.amount, 0);
+
+    return {
+      fromLabel: dateLabels[from] ?? from,
+      toLabel: dateLabels[to] ?? to,
+      total,
+    };
+  }, [selectStart, selectEnd, data, dateLabels]);
+
   if (data.length === 0) {
     return (
       <div className="flex h-[250px] items-center justify-center text-sm text-muted-foreground">
@@ -115,10 +132,14 @@ export function SpendingOverTime({ data }: SpendingOverTimeProps) {
         />
         <ChartTooltip
           content={
-            <ChartTooltipContent
-              formatter={(value) => formatCurrency(Number(value))}
-              labelFormatter={(label) => dateLabels[label] ?? label}
-            />
+            selectionRange ? (
+              <SelectionRangeTooltip range={selectionRange} />
+            ) : (
+              <ChartTooltipContent
+                formatter={(value) => formatCurrency(Number(value))}
+                labelFormatter={(label) => dateLabels[label] ?? label}
+              />
+            )
           }
         />
         <defs>
@@ -156,5 +177,29 @@ export function SpendingOverTime({ data }: SpendingOverTimeProps) {
         )}
       </AreaChart>
     </ChartContainer>
+  );
+}
+
+function SelectionRangeTooltip({
+  active,
+  range,
+}: {
+  active?: boolean;
+  range: { fromLabel: string; toLabel: string; total: number };
+}) {
+  if (!active) return null;
+
+  return (
+    <div className="grid min-w-[8rem] items-start gap-1.5 rounded-lg border border-border/50 bg-background px-2.5 py-1.5 text-xs shadow-xl">
+      <div className="font-medium">
+        {range.fromLabel} &mdash; {range.toLabel}
+      </div>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-muted-foreground">Total Spending</span>
+        <span className="font-mono font-medium text-foreground tabular-nums">
+          {formatCurrency(range.total)}
+        </span>
+      </div>
+    </div>
   );
 }
