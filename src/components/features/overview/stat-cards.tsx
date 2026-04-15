@@ -4,7 +4,7 @@ import {
   DollarSign,
   TrendingDown,
   TrendingUp,
-  Landmark,
+  PiggyBank,
   type LucideIcon,
 } from "lucide-react";
 
@@ -15,13 +15,13 @@ interface StatCardsProps {
   netWorthDelta: number;
   previousIncome: number;
   previousExpenses: number;
-  accountCount: number;
   rangeLabel?: string;
 }
 
 function percentChange(current: number, previous: number): number | null {
   if (previous === 0) return null;
-  return Math.round(((current - previous) / previous) * 100);
+  const change = Math.round(((current - previous) / previous) * 100);
+  return change === 0 ? null : change;
 }
 
 interface TrendIndicatorProps {
@@ -60,11 +60,42 @@ export function StatCards({
   netWorthDelta,
   previousIncome,
   previousExpenses,
-  accountCount,
   rangeLabel,
 }: StatCardsProps) {
   const incomePctChange = percentChange(incomeThisMonth, previousIncome);
   const expensesPctChange = percentChange(expensesThisMonth, previousExpenses);
+
+  // Derived metrics
+  const cashFlow = incomeThisMonth - expensesThisMonth;
+  const savingsRate = incomeThisMonth > 0
+    ? Math.round((cashFlow / incomeThisMonth) * 100)
+    : null;
+
+  const previousCashFlow = previousIncome - previousExpenses;
+  const previousSavingsRate = previousIncome > 0
+    ? Math.round((previousCashFlow / previousIncome) * 100)
+    : null;
+
+  const savingsRateDelta =
+    savingsRate !== null && previousSavingsRate !== null
+      ? savingsRate - previousSavingsRate
+      : null;
+
+  const expenseRatio = incomeThisMonth > 0
+    ? Math.round((expensesThisMonth / incomeThisMonth) * 100)
+    : null;
+
+  // Savings rate description
+  let savingsDescription: string;
+  if (savingsRate === null) {
+    savingsDescription = "No income recorded";
+  } else if (cashFlow > 0) {
+    savingsDescription = `${formatCompactCurrency(cashFlow)} saved`;
+  } else if (cashFlow < 0) {
+    savingsDescription = `${formatCompactCurrency(Math.abs(cashFlow))} overspent`;
+  } else {
+    savingsDescription = "Breaking even";
+  }
 
   const stats: StatConfig[] = [
     {
@@ -79,10 +110,6 @@ export function StatCards({
           }
         : null,
     },
-    // TODO: Fix "Down 0% vs prev period"
-    // TODO: Hone in/re-explore what would be most useful for user as a secondary metric - what if it was a vertical bar that represented how much expenses we have left (projected or budget?) for the period.
-    // TODO: We should have a button (+ icon) to set/add recurring income or expenses in order to better build budgets/planning
-    // Would be ideal if recurring income/expenses tied into budgets
     {
       title: "Income",
       value: formatCurrency(incomeThisMonth),
@@ -101,7 +128,9 @@ export function StatCards({
     {
       title: "Expenses",
       value: formatCurrency(expensesThisMonth),
-      description: rangeLabel ?? "This month",
+      description: expenseRatio !== null
+        ? `${expenseRatio}% of income`
+        : rangeLabel ?? "This month",
       icon: TrendingDown,
       gradient: "from-rose-500 to-red-700",
       trend: expensesPctChange !== null
@@ -114,13 +143,18 @@ export function StatCards({
           ? { delta: 1, label: "New this period", invertColor: true }
           : null,
     },
-    // TODO: Make Accounts have icons referring to the first 5 accounts, icons/colors should be relevant (different bank companies, etc)
     {
-      title: "Accounts",
-      value: accountCount.toString(),
-      description: "Linked",
-      icon: Landmark,
-      gradient: "from-violet-500 to-purple-700",
+      title: "Savings Rate",
+      value: savingsRate !== null ? `${savingsRate}%` : "—",
+      description: savingsDescription,
+      icon: PiggyBank,
+      gradient: "from-amber-500 to-orange-700",
+      trend: savingsRateDelta !== null && savingsRateDelta !== 0
+        ? {
+            delta: savingsRateDelta,
+            label: `${Math.abs(savingsRateDelta)}% vs prev period`,
+          }
+        : null,
     },
   ];
 

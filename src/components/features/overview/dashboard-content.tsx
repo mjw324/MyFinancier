@@ -21,14 +21,12 @@ const RANGE_LABELS: Record<string, string> = {
 
 interface DashboardContentProps {
   netWorth: number;
-  accountCount: number;
   initialRangeData: DashboardRangeData | null;
   children: React.ReactNode;
 }
 
 export function DashboardContent({
   netWorth,
-  accountCount,
   initialRangeData,
   children,
 }: DashboardContentProps) {
@@ -65,7 +63,6 @@ export function DashboardContent({
           netWorthDelta={rangeData?.netWorthDelta ?? 0}
           previousIncome={rangeData?.previousIncome ?? 0}
           previousExpenses={rangeData?.previousExpenses ?? 0}
-          accountCount={accountCount}
           rangeLabel={RANGE_LABELS[range]}
         />
       </div>
