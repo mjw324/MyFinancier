@@ -19,6 +19,17 @@ export function formatCurrency(
   return currencyFormatter.format(num);
 }
 
+const compactCurrencyFormatter = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  notation: "compact",
+  maximumFractionDigits: 1,
+});
+
+export function formatCompactCurrency(amount: number): string {
+  return compactCurrencyFormatter.format(amount);
+}
+
 export function formatDate(
   date: Date | string,
   style: "short" | "long" = "short",

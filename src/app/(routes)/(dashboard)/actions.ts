@@ -18,6 +18,9 @@ export interface SpendingDataPoint {
 export interface DashboardRangeData {
   income: number;
   expenses: number;
+  netWorthDelta: number;
+  previousIncome: number;
+  previousExpenses: number;
   spendingByCategory: Array<{
     category: string;
     rawCategory: string;
@@ -61,6 +64,46 @@ function getDateRange(range: SpendingRange): { start: Date; end: Date } {
   }
 }
 
+function getPreviousDateRange(range: SpendingRange): { start: Date; end: Date } {
+  const now = new Date();
+  switch (range) {
+    case "week": {
+      const end = new Date(now);
+      end.setDate(end.getDate() - 7);
+      end.setHours(23, 59, 59, 999);
+      const start = new Date(end);
+      start.setDate(start.getDate() - 6);
+      start.setHours(0, 0, 0, 0);
+      return { start, end };
+    }
+    case "month": {
+      const end = new Date(now);
+      end.setDate(end.getDate() - 30);
+      end.setHours(23, 59, 59, 999);
+      const start = new Date(end);
+      start.setDate(start.getDate() - 29);
+      start.setHours(0, 0, 0, 0);
+      return { start, end };
+    }
+    case "year": {
+      const end = new Date(now);
+      end.setFullYear(end.getFullYear() - 1);
+      end.setHours(23, 59, 59, 999);
+      const start = new Date(end);
+      start.setFullYear(start.getFullYear() - 1);
+      start.setDate(start.getDate() + 1);
+      start.setHours(0, 0, 0, 0);
+      return { start, end };
+    }
+    case "ytd": {
+      const prevYear = now.getFullYear() - 1;
+      const start = new Date(prevYear, 0, 1);
+      const end = new Date(prevYear, now.getMonth(), now.getDate(), 23, 59, 59, 999);
+      return { start, end };
+    }
+  }
+}
+
 export async function getDashboardDataByRange(
   range: string,
 ): Promise<
@@ -73,11 +116,11 @@ export async function getDashboardDataByRange(
   if (!parsed.success) return { success: false, error: "Invalid range" };
 
   const { start, end } = getDateRange(parsed.data);
-  const transactions = await getTransactionsByDateRange(
-    session.user.id,
-    start,
-    end,
-  );
+  const prev = getPreviousDateRange(parsed.data);
+  const [transactions, prevTransactions] = await Promise.all([
+    getTransactionsByDateRange(session.user.id, start, end),
+    getTransactionsByDateRange(session.user.id, prev.start, prev.end),
+  ]);
 
   // Single pass: compute income, expenses, category breakdown, and time series
   let income = 0;
@@ -100,6 +143,18 @@ export async function getDashboardDataByRange(
       if (!dailyDates.has(dayKey)) dailyDates.set(dayKey, d);
     } else if (amount < 0) {
       income += Math.abs(amount);
+    }
+  }
+
+  // Compute previous period totals
+  let previousIncome = 0;
+  let previousExpenses = 0;
+  for (const txn of prevTransactions) {
+    const amount = parseFloat(txn.amount);
+    if (amount > 0) {
+      previousExpenses += amount;
+    } else if (amount < 0) {
+      previousIncome += Math.abs(amount);
     }
   }
 
@@ -142,6 +197,9 @@ export async function getDashboardDataByRange(
     data: {
       income: Math.round(income * 100) / 100,
       expenses: Math.round(expenses * 100) / 100,
+      netWorthDelta: Math.round((income - expenses) * 100) / 100,
+      previousIncome: Math.round(previousIncome * 100) / 100,
+      previousExpenses: Math.round(previousExpenses * 100) / 100,
       spendingByCategory,
       spendingOverTime,
       recentTransactions,

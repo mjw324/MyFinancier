@@ -62,6 +62,9 @@ export function DashboardContent({
           netWorth={netWorth}
           incomeThisMonth={rangeData?.income ?? 0}
           expensesThisMonth={rangeData?.expenses ?? 0}
+          netWorthDelta={rangeData?.netWorthDelta ?? 0}
+          previousIncome={rangeData?.previousIncome ?? 0}
+          previousExpenses={rangeData?.previousExpenses ?? 0}
           accountCount={accountCount}
           rangeLabel={RANGE_LABELS[range]}
         />
