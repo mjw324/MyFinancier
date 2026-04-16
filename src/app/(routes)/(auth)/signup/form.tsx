@@ -46,7 +46,7 @@ export default function SignUpForm() {
         console.log("SIGN_UP:", response.error.status);
         toast.error(response.error.message);
       } else {
-        redirect("/");
+        redirect("/verify-email");
       }
     });
   }

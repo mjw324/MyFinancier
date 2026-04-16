@@ -3,6 +3,9 @@ import { betterAuth } from "better-auth";
 import { username, twoFactor } from "better-auth/plugins";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { restrictedUsernames } from "./usernames";
+import { sendEmail } from "@/lib/email/send";
+import { verificationEmailTemplate } from "@/lib/email/templates/verification";
+import { otpEmailTemplate } from "@/lib/email/templates/otp";
 
 export const auth = betterAuth({
   database: drizzleAdapter(db, {
@@ -18,14 +21,32 @@ export const auth = betterAuth({
     twoFactor({
       otpOptions: {
         async sendOTP({ user, otp }) {
-          // TODO: Replace with email service (Resend, SendGrid, etc.) for production
-          console.log(`[2FA OTP] Code for ${user.email}: ${otp}`);
+          await sendEmail({
+            to: user.email,
+            subject: "Your MyFinancier verification code",
+            html: otpEmailTemplate({ name: user.name, otp }),
+          });
         },
       },
     }),
   ],
   emailAndPassword: {
     enabled: true,
+    requireEmailVerification: true,
+  },
+  emailVerification: {
+    sendOnSignUp: true,
+    autoSignInAfterVerification: true,
+    sendVerificationEmail: async ({ user, url }) => {
+      await sendEmail({
+        to: user.email,
+        subject: "Verify your MyFinancier email",
+        html: verificationEmailTemplate({
+          name: user.name,
+          verificationUrl: url,
+        }),
+      });
+    },
   },
   user: {
     additionalFields: {
