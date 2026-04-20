@@ -14,6 +14,24 @@ interface PlaidLinkButtonProps {
   size?: "default" | "sm" | "lg" | "icon";
 }
 
+function PlaidLinkLauncher({
+  token,
+  onSuccess,
+  onExit,
+}: {
+  token: string;
+  onSuccess: (publicToken: string, metadata: any) => void;
+  onExit: (error: any) => void;
+}) {
+  const { open, ready } = usePlaidLink({ token, onSuccess, onExit });
+
+  useEffect(() => {
+    if (ready) open();
+  }, [ready, open]);
+
+  return null;
+}
+
 export function PlaidLinkButton({
   plaidItemId,
   children,
@@ -56,6 +74,8 @@ export function PlaidLinkButton({
         }
       } catch {
         toast.error("Failed to link account. Please try again.");
+      } finally {
+        setLinkToken(null);
       }
     },
     [router],
@@ -67,18 +87,6 @@ export function PlaidLinkButton({
       toast.error("Connection was interrupted. Please try again.");
     }
   }, []);
-
-  const { open, ready } = usePlaidLink({
-    token: linkToken!,
-    onSuccess,
-    onExit,
-  });
-
-  useEffect(() => {
-    if (linkToken && ready) {
-      open();
-    }
-  }, [linkToken, ready, open]);
 
   const handleClick = async () => {
     setIsLoading(true);
@@ -102,20 +110,29 @@ export function PlaidLinkButton({
   };
 
   return (
-    <Button
-      onClick={handleClick}
-      disabled={isLoading}
-      variant={variant}
-      size={size}
-    >
-      {isLoading ? (
-        <Loader2 className="size-4 animate-spin" />
-      ) : plaidItemId ? (
-        <RefreshCw className="size-4" />
-      ) : (
-        <Plus className="size-4" />
+    <>
+      <Button
+        onClick={handleClick}
+        disabled={isLoading}
+        variant={variant}
+        size={size}
+      >
+        {isLoading ? (
+          <Loader2 className="size-4 animate-spin" />
+        ) : plaidItemId ? (
+          <RefreshCw className="size-4" />
+        ) : (
+          <Plus className="size-4" />
+        )}
+        {children ?? (plaidItemId ? "Reconnect" : "Link Account")}
+      </Button>
+      {linkToken && (
+        <PlaidLinkLauncher
+          token={linkToken}
+          onSuccess={onSuccess}
+          onExit={onExit}
+        />
       )}
-      {children ?? (plaidItemId ? "Reconnect" : "Link Account")}
-    </Button>
+    </>
   );
 }

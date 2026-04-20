@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
@@ -20,7 +20,6 @@ import {
   InputOTP,
   InputOTPGroup,
   InputOTPSlot,
-  InputOTPSeparator,
 } from "@/components/ui/input-otp";
 import {
   OtpSchema,
@@ -70,6 +69,22 @@ function OtpForm({
     resolver: zodResolver(OtpSchema),
     defaultValues: { code: "" },
   });
+
+  const initialSendRef = useRef(false);
+  useEffect(() => {
+    if (initialSendRef.current) return;
+    initialSendRef.current = true;
+    authClient.twoFactor.sendOtp().then(({ error }) => {
+      if (error) {
+        if (error.status === 401 || error.status === 403) {
+          toast.error("Session expired. Please sign in again.");
+          router.push("/signin");
+          return;
+        }
+        toast.error(error.message ?? "Failed to send verification code");
+      }
+    });
+  }, [router]);
 
   function onSubmit(data: OtpValues) {
     startTransition(async () => {
@@ -125,7 +140,6 @@ function OtpForm({
                     <InputOTPSlot index={1} />
                     <InputOTPSlot index={2} />
                   </InputOTPGroup>
-                  <InputOTPSeparator />
                   <InputOTPGroup>
                     <InputOTPSlot index={3} />
                     <InputOTPSlot index={4} />

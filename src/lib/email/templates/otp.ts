@@ -10,9 +10,7 @@ export function otpEmailTemplate({ name, otp }: OtpEmailParams): string {
     <table cellpadding="0" cellspacing="0" width="100%">
       <tr>
         <td align="center">
-          <div style="display:inline-block;padding:16px 48px;background-color:#f4f4f5;border-radius:8px;border:1px solid #e4e4e7;letter-spacing:8px;font-size:32px;font-weight:700;color:#0a0a0a;">
-            ${otp}
-          </div>
+          <div style="display:inline-block;padding:16px 48px 16px 56px;background-color:#f4f4f5;border-radius:8px;border:1px solid #e4e4e7;letter-spacing:8px;font-size:32px;font-weight:700;color:#0a0a0a;">${otp}</div>
         </td>
       </tr>
     </table>

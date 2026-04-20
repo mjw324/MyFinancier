@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { authClient } from "@/lib/auth/client";
+import { REGEXP_ONLY_DIGITS } from "input-otp";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -15,6 +16,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  InputOTP,
+  InputOTPGroup,
+  InputOTPSlot,
+} from "@/components/ui/input-otp";
 import { BackupCodesDisplay } from "./backup-codes-display";
 
 export function TwoFactorCard({
@@ -24,9 +30,15 @@ export function TwoFactorCard({
 }) {
   const [enabled, setEnabled] = useState(twoFactorEnabled);
   const [dialog, setDialog] = useState<
-    "idle" | "enable" | "disable" | "regenerate" | "show-codes"
+    | "idle"
+    | "enable"
+    | "verify-enable"
+    | "disable"
+    | "regenerate"
+    | "show-codes"
   >("idle");
   const [password, setPassword] = useState("");
+  const [otpCode, setOtpCode] = useState("");
   const [backupCodes, setBackupCodes] = useState<string[]>([]);
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
@@ -34,6 +46,7 @@ export function TwoFactorCard({
   function resetDialog() {
     setDialog("idle");
     setPassword("");
+    setOtpCode("");
   }
 
   function handleEnable() {
@@ -48,10 +61,45 @@ export function TwoFactorCard({
       if (data?.backupCodes) {
         setBackupCodes(data.backupCodes);
       }
-      setEnabled(true);
-      setDialog("show-codes");
+
+      const { error: sendError } = await authClient.twoFactor.sendOtp();
+      if (sendError) {
+        toast.error(
+          sendError.message ??
+            "2FA setup started, but we could not send a verification code",
+        );
+        return;
+      }
+
       setPassword("");
+      setDialog("verify-enable");
+    });
+  }
+
+  function handleVerifyEnable() {
+    startTransition(async () => {
+      const { error } = await authClient.twoFactor.verifyOtp({ code: otpCode });
+
+      if (error) {
+        toast.error(error.message ?? "Invalid verification code");
+        return;
+      }
+
+      setEnabled(true);
+      setOtpCode("");
+      setDialog("show-codes");
       router.refresh();
+    });
+  }
+
+  function handleResendEnableOtp() {
+    startTransition(async () => {
+      const { error } = await authClient.twoFactor.sendOtp();
+      if (error) {
+        toast.error(error.message ?? "Failed to resend code");
+        return;
+      }
+      toast.success("A new code has been sent to your email");
     });
   }
 
@@ -163,6 +211,73 @@ export function TwoFactorCard({
                 disabled={isPending || !password}
               >
                 {isPending ? "Enabling..." : "Enable"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Verify 2FA Enable Dialog */}
+      <Dialog
+        open={dialog === "verify-enable"}
+        onOpenChange={(open) => {
+          if (!open) {
+            setOtpCode("");
+            setDialog("idle");
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirm Two-Factor Setup</DialogTitle>
+            <DialogDescription>
+              Enter the verification code we just sent to your email to finish
+              enabling 2FA.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col items-center gap-4">
+            <InputOTP
+              maxLength={6}
+              pattern={REGEXP_ONLY_DIGITS}
+              value={otpCode}
+              onChange={setOtpCode}
+              disabled={isPending}
+            >
+              <InputOTPGroup>
+                <InputOTPSlot index={0} />
+                <InputOTPSlot index={1} />
+                <InputOTPSlot index={2} />
+              </InputOTPGroup>
+              <InputOTPGroup>
+                <InputOTPSlot index={3} />
+                <InputOTPSlot index={4} />
+                <InputOTPSlot index={5} />
+              </InputOTPGroup>
+            </InputOTP>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={handleResendEnableOtp}
+              disabled={isPending}
+            >
+              Resend Code
+            </Button>
+            <div className="flex w-full justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setOtpCode("");
+                  setDialog("idle");
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleVerifyEnable}
+                disabled={isPending || otpCode.length !== 6}
+              >
+                {isPending ? "Verifying..." : "Verify & Enable"}
               </Button>
             </div>
           </div>
