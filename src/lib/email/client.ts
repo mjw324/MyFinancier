@@ -12,4 +12,17 @@ function getConfig() {
   return { region, credentials: { accessKeyId, secretAccessKey } };
 }
 
-export const sesClient = new SESClient(getConfig());
+let cachedClient: SESClient | undefined;
+
+function getClient(): SESClient {
+  if (!cachedClient) cachedClient = new SESClient(getConfig());
+  return cachedClient;
+}
+
+export const sesClient = new Proxy({} as SESClient, {
+  get(_target, prop, receiver) {
+    const client = getClient();
+    const value = Reflect.get(client, prop, receiver);
+    return typeof value === "function" ? value.bind(client) : value;
+  },
+});
