@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { PlaidLinkButton } from "@/components/features/accounts/plaid-link-button";
 import { UnlinkAccountDialog } from "@/components/features/settings/unlink-account-dialog";
+import { SyncAccountButton } from "@/components/features/settings/sync-account-button";
 import { TwoFactorCard } from "@/components/features/settings/two-factor-card";
 import { formatRelativeDate } from "@/lib/utils/format";
 
@@ -99,11 +100,18 @@ export default async function SettingsPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      {needsReconnect && (
+                      {needsReconnect ? (
                         <PlaidLinkButton
                           plaidItemId={item.id}
                           variant="outline"
                           size="sm"
+                        />
+                      ) : (
+                        <SyncAccountButton
+                          plaidItemId={item.id}
+                          institutionName={
+                            item.institutionName ?? "Unknown Institution"
+                          }
                         />
                       )}
                       <UnlinkAccountDialog
