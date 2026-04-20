@@ -21,6 +21,7 @@ export async function createLinkToken(
     user: { client_user_id: userId },
     products: [Products.Transactions],
     webhook: process.env.PLAID_WEBHOOK_URL || undefined,
+    redirect_uri: process.env.PLAID_REDIRECT_URI || undefined,
   });
 
   return {
@@ -95,6 +96,7 @@ export async function createUpdateLinkToken(
     user: { client_user_id: userId },
     access_token: decryptedToken,
     webhook: process.env.PLAID_WEBHOOK_URL || undefined,
+    redirect_uri: process.env.PLAID_REDIRECT_URI || undefined,
   });
 
   return {

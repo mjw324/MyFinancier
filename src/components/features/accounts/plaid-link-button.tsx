@@ -98,6 +98,7 @@ export function PlaidLinkButton({
       });
       const data = await res.json();
       if (data.success) {
+        sessionStorage.setItem("plaid_link_token", data.data.linkToken);
         setLinkToken(data.data.linkToken);
       } else {
         toast.error(data.error || "Failed to initialize connection");
