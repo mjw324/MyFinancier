@@ -4,8 +4,6 @@ import { useRouter } from "next/navigation";
 import { Label, Pie, PieChart, Cell } from "recharts";
 import {
   ChartContainer,
-  ChartLegend,
-  ChartLegendContent,
   ChartTooltip,
   type ChartConfig,
 } from "@/components/ui/chart";
@@ -48,9 +46,13 @@ export function SpendingByCategory({ data }: SpendingByCategoryProps) {
   }
 
   return (
-    <ChartContainer config={chartConfig} className="mx-auto aspect-square max-h-[300px]">
-      <PieChart>
-        <ChartTooltip
+    <div className="flex w-full flex-col items-center">
+      <ChartContainer
+        config={chartConfig}
+        className="mx-auto aspect-square w-full max-w-[300px]"
+      >
+        <PieChart>
+          <ChartTooltip
           content={({ active, payload }) => {
             if (!active || !payload?.length) return null;
             const item = payload[0];
@@ -89,38 +91,51 @@ export function SpendingByCategory({ data }: SpendingByCategoryProps) {
           ))}
           <Label
             content={({ viewBox }) => {
-              if (viewBox && "cx" in viewBox && "cy" in viewBox) {
-                return (
-                  <text
-                    x={viewBox.cx}
-                    y={viewBox.cy}
-                    textAnchor="middle"
-                    dominantBaseline="middle"
-                  >
-                    <tspan
-                      x={viewBox.cx}
-                      dy="-35"
-                      className={`fill-foreground ${total >= 10000 ? "text-xl" : "text-2xl"} font-bold`}
-                    >
-                      {formatCurrency(total)}
-                    </tspan>
-                    <tspan
-                      x={viewBox.cx}
-                      dy="22"
-                      className="fill-muted-foreground text-sm"
-                    >
-                      Total
-                    </tspan>
-                  </text>
-                );
+              if (!viewBox || !("cx" in viewBox) || !("cy" in viewBox)) {
+                return null;
               }
+              const { cx, cy } = viewBox as { cx: number; cy: number };
+              const totalFontSize = total >= 10000 ? 20 : 24;
+              const labelFontSize = 14;
+              const gap = 2;
+              const totalY = cy - labelFontSize / 2 - gap / 2;
+              const labelY = cy + totalFontSize / 2 + gap / 2;
+              return (
+                <text textAnchor="middle">
+                  <tspan
+                    x={cx}
+                    y={totalY}
+                    dominantBaseline="middle"
+                    className={`fill-foreground font-bold tabular-nums ${total >= 10000 ? "text-xl" : "text-2xl"}`}
+                  >
+                    {formatCurrency(total)}
+                  </tspan>
+                  <tspan
+                    x={cx}
+                    y={labelY}
+                    dominantBaseline="middle"
+                    className="fill-muted-foreground text-sm"
+                  >
+                    Total
+                  </tspan>
+                </text>
+              );
             }}
           />
-        </Pie>
-        <ChartLegend
-          content={<ChartLegendContent nameKey="category" className="flex-wrap" />}
-        />
-      </PieChart>
-    </ChartContainer>
+          </Pie>
+        </PieChart>
+      </ChartContainer>
+      <div className="mt-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-xs">
+        {data.map((item) => (
+          <div key={item.rawCategory} className="flex items-center gap-1.5">
+            <div
+              className="h-2 w-2 shrink-0 rounded-[2px]"
+              style={{ backgroundColor: getCategoryColor(item.rawCategory).fill }}
+            />
+            <span className="text-muted-foreground">{item.category}</span>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
