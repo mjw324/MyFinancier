@@ -17,14 +17,27 @@ function getPlaidSecret(): string {
   );
 }
 
-const configuration = new Configuration({
-  basePath: PlaidEnvironments[process.env.PLAID_ENV ?? "sandbox"],
-  baseOptions: {
-    headers: {
-      "PLAID-CLIENT-ID": process.env.PLAID_CLIENT_ID,
-      "PLAID-SECRET": getPlaidSecret(),
+let cachedClient: PlaidApi | undefined;
+
+function getClient(): PlaidApi {
+  if (cachedClient) return cachedClient;
+  const configuration = new Configuration({
+    basePath: PlaidEnvironments[process.env.PLAID_ENV ?? "sandbox"],
+    baseOptions: {
+      headers: {
+        "PLAID-CLIENT-ID": process.env.PLAID_CLIENT_ID,
+        "PLAID-SECRET": getPlaidSecret(),
+      },
     },
+  });
+  cachedClient = new PlaidApi(configuration);
+  return cachedClient;
+}
+
+export const plaidClient = new Proxy({} as PlaidApi, {
+  get(_target, prop, receiver) {
+    const client = getClient();
+    const value = Reflect.get(client, prop, receiver);
+    return typeof value === "function" ? value.bind(client) : value;
   },
 });
-
-export const plaidClient = new PlaidApi(configuration);
