@@ -1,6 +1,8 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency, formatRelativeDate } from "@/lib/utils/format";
+import { isLiabilityType } from "@/lib/utils/account-type";
+import { cn } from "@/lib/utils";
 import { PlaidLinkButton } from "./plaid-link-button";
 
 interface AccountCardProps {
@@ -25,6 +27,7 @@ export function AccountCard({ account }: AccountCardProps) {
   const needsReconnect =
     account.plaidItem.status === "login_required" ||
     account.plaidItem.status === "pending_expiration";
+  const isLiability = isLiabilityType(account.type);
 
   return (
     <Card>
@@ -46,17 +49,25 @@ export function AccountCard({ account }: AccountCardProps) {
       <CardContent className="mt-auto">
         <div className="flex items-end justify-between">
           <div>
-            <p className="text-2xl font-bold">
+            <p
+              className={cn(
+                "text-2xl font-bold",
+                isLiability
+                  ? "text-red-600 dark:text-red-400"
+                  : "text-emerald-600 dark:text-emerald-400",
+              )}
+            >
+              {isLiability ? "-" : ""}
               {formatCurrency(
                 account.currentBalance,
                 account.isoCurrencyCode ?? "USD",
               )}
             </p>
-            {account.lastSyncedAt && (
-              <p className="text-xs text-muted-foreground">
-                Synced {formatRelativeDate(account.lastSyncedAt)}
-              </p>
-            )}
+            <p className="text-xs text-muted-foreground">
+              {isLiability ? "Owed" : "Available"}
+              {account.lastSyncedAt &&
+                ` · synced ${formatRelativeDate(account.lastSyncedAt)}`}
+            </p>
           </div>
           {needsReconnect && (
             <div className="flex flex-col items-end gap-1">

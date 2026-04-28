@@ -1,6 +1,7 @@
 import { and, between, eq, gt, lt, sql } from "drizzle-orm";
 import { db } from "..";
 import { financialAccounts, transactions, budgets, categories } from "../schema";
+import { getPeriodStart, getPeriodEnd } from "@/lib/utils/budget-periods";
 
 export async function getOverviewStats(userId: string) {
   const now = new Date();
@@ -9,7 +10,13 @@ export async function getOverviewStats(userId: string) {
 
   const [accountStats] = await db
     .select({
-      netWorth: sql<string>`coalesce(sum(${financialAccounts.currentBalance}::numeric), 0)`,
+      netWorth: sql<string>`coalesce(sum(
+        case
+          when ${financialAccounts.type} in ('credit', 'loan')
+            then -1 * ${financialAccounts.currentBalance}::numeric
+          else ${financialAccounts.currentBalance}::numeric
+        end
+      ), 0)`,
       accountCount: sql<number>`count(*)`,
     })
     .from(financialAccounts)
@@ -118,36 +125,3 @@ export async function getBudgetProgress(userId: string) {
   return results;
 }
 
-function getPeriodStart(period: string, budgetStart: Date, now: Date): Date {
-  switch (period) {
-    case "monthly":
-      return new Date(now.getFullYear(), now.getMonth(), 1);
-    case "weekly": {
-      const day = now.getDay();
-      const diff = now.getDate() - day + (day === 0 ? -6 : 1);
-      return new Date(now.getFullYear(), now.getMonth(), diff);
-    }
-    case "yearly":
-      return new Date(now.getFullYear(), 0, 1);
-    default:
-      return budgetStart;
-  }
-}
-
-function getPeriodEnd(period: string, start: Date): Date {
-  switch (period) {
-    case "monthly":
-      return new Date(start.getFullYear(), start.getMonth() + 1, 0, 23, 59, 59);
-    case "weekly":
-      return new Date(
-        start.getFullYear(),
-        start.getMonth(),
-        start.getDate() + 6,
-        23, 59, 59,
-      );
-    case "yearly":
-      return new Date(start.getFullYear(), 11, 31, 23, 59, 59);
-    default:
-      return new Date(start.getFullYear(), start.getMonth() + 1, 0, 23, 59, 59);
-  }
-}

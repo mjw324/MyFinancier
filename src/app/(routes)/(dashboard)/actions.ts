@@ -4,6 +4,8 @@ import { z } from "zod";
 import { getServerSession } from "@/lib/auth/get-session";
 import { getTransactionsByDateRange } from "@/lib/db/queries/transactions";
 import { formatCategory } from "@/lib/utils/format";
+import { aggregateIncomeAndExpenses } from "@/lib/utils/aggregations";
+import { getDateRange, getPreviousDateRange } from "@/lib/utils/date-ranges";
 
 const rangeSchema = z.enum(["week", "month", "year", "ytd"]);
 
@@ -37,73 +39,6 @@ export interface DashboardRangeData {
   }>;
 }
 
-function getDateRange(range: SpendingRange): { start: Date; end: Date } {
-  const now = new Date();
-  switch (range) {
-    case "week": {
-      const start = new Date(now);
-      start.setDate(start.getDate() - 6);
-      start.setHours(0, 0, 0, 0);
-      return { start, end: now };
-    }
-    case "month": {
-      const start = new Date(now);
-      start.setDate(start.getDate() - 29);
-      start.setHours(0, 0, 0, 0);
-      return { start, end: now };
-    }
-    case "year": {
-      const start = new Date(now);
-      start.setFullYear(start.getFullYear() - 1);
-      start.setDate(start.getDate() + 1);
-      start.setHours(0, 0, 0, 0);
-      return { start, end: now };
-    }
-    case "ytd":
-      return { start: new Date(now.getFullYear(), 0, 1), end: now };
-  }
-}
-
-function getPreviousDateRange(range: SpendingRange): { start: Date; end: Date } {
-  const now = new Date();
-  switch (range) {
-    case "week": {
-      const end = new Date(now);
-      end.setDate(end.getDate() - 7);
-      end.setHours(23, 59, 59, 999);
-      const start = new Date(end);
-      start.setDate(start.getDate() - 6);
-      start.setHours(0, 0, 0, 0);
-      return { start, end };
-    }
-    case "month": {
-      const end = new Date(now);
-      end.setDate(end.getDate() - 30);
-      end.setHours(23, 59, 59, 999);
-      const start = new Date(end);
-      start.setDate(start.getDate() - 29);
-      start.setHours(0, 0, 0, 0);
-      return { start, end };
-    }
-    case "year": {
-      const end = new Date(now);
-      end.setFullYear(end.getFullYear() - 1);
-      end.setHours(23, 59, 59, 999);
-      const start = new Date(end);
-      start.setFullYear(start.getFullYear() - 1);
-      start.setDate(start.getDate() + 1);
-      start.setHours(0, 0, 0, 0);
-      return { start, end };
-    }
-    case "ytd": {
-      const prevYear = now.getFullYear() - 1;
-      const start = new Date(prevYear, 0, 1);
-      const end = new Date(prevYear, now.getMonth(), now.getDate(), 23, 59, 59, 999);
-      return { start, end };
-    }
-  }
-}
-
 export async function getDashboardDataByRange(
   range: string,
 ): Promise<
@@ -122,9 +57,12 @@ export async function getDashboardDataByRange(
     getTransactionsByDateRange(session.user.id, prev.start, prev.end),
   ]);
 
-  // Single pass: compute income, expenses, category breakdown, and time series
-  let income = 0;
-  let expenses = 0;
+  // Income & expenses (current + previous period) via shared pure helper
+  const { income, expenses } = aggregateIncomeAndExpenses(transactions);
+  const { income: previousIncome, expenses: previousExpenses } =
+    aggregateIncomeAndExpenses(prevTransactions);
+
+  // Category breakdown + daily time series (expenses only)
   const categoryTotals = new Map<string, number>();
   const dailyTotals = new Map<string, number>();
   const dailyDates = new Map<string, Date>();
@@ -132,29 +70,12 @@ export async function getDashboardDataByRange(
   for (const txn of transactions) {
     const amount = parseFloat(txn.amount);
     if (amount > 0) {
-      expenses += amount;
-      // Category breakdown (expenses only)
       const cat = txn.category ?? "UNCATEGORIZED";
       categoryTotals.set(cat, (categoryTotals.get(cat) ?? 0) + amount);
-      // Daily time series (expenses only)
       const d = txn.date;
       const dayKey = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
       dailyTotals.set(dayKey, (dailyTotals.get(dayKey) ?? 0) + amount);
       if (!dailyDates.has(dayKey)) dailyDates.set(dayKey, d);
-    } else if (amount < 0) {
-      income += Math.abs(amount);
-    }
-  }
-
-  // Compute previous period totals
-  let previousIncome = 0;
-  let previousExpenses = 0;
-  for (const txn of prevTransactions) {
-    const amount = parseFloat(txn.amount);
-    if (amount > 0) {
-      previousExpenses += amount;
-    } else if (amount < 0) {
-      previousIncome += Math.abs(amount);
     }
   }
 

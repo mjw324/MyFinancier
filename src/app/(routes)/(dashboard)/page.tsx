@@ -1,4 +1,5 @@
 import { type Metadata } from "next";
+import { redirect } from "next/navigation";
 import { getServerSession } from "@/lib/auth/get-session";
 import {
   getOverviewStats,
@@ -14,7 +15,8 @@ export const metadata: Metadata = {
 
 export default async function OverviewPage() {
   const session = await getServerSession();
-  const userId = session!.user.id;
+  if (!session?.user) redirect("/signin");
+  const userId = session.user.id;
 
   const [stats, dashboardResult, budgetProgress] = await Promise.all([
     getOverviewStats(userId),

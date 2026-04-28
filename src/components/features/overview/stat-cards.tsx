@@ -1,5 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency, formatCompactCurrency } from "@/lib/utils/format";
+import { calculateSavingsRate } from "@/lib/utils/aggregations";
 import {
   DollarSign,
   TrendingDown,
@@ -67,14 +68,8 @@ export function StatCards({
 
   // Derived metrics
   const cashFlow = incomeThisMonth - expensesThisMonth;
-  const savingsRate = incomeThisMonth > 0
-    ? Math.round((cashFlow / incomeThisMonth) * 100)
-    : null;
-
-  const previousCashFlow = previousIncome - previousExpenses;
-  const previousSavingsRate = previousIncome > 0
-    ? Math.round((previousCashFlow / previousIncome) * 100)
-    : null;
+  const savingsRate = calculateSavingsRate(incomeThisMonth, expensesThisMonth);
+  const previousSavingsRate = calculateSavingsRate(previousIncome, previousExpenses);
 
   const savingsRateDelta =
     savingsRate !== null && previousSavingsRate !== null
