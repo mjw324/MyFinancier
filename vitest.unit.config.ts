@@ -3,6 +3,8 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   resolve: { tsconfigPaths: true },
   test: {
-    projects: ["vitest.unit.config.ts", "vitest.integration.config.ts"],
+    name: "unit",
+    environment: "node",
+    include: ["tests/unit/**/*.test.ts"],
   },
 });
