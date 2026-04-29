@@ -69,7 +69,10 @@ export default async function TransactionsPage({
         categories={categoryOptions}
       />
 
-      <TransactionsTable transactions={transactions} />
+      <TransactionsTable
+        transactions={transactions}
+        categories={categoryNames}
+      />
 
       <Pagination
         currentPage={currentPage}

@@ -14,7 +14,10 @@ export interface FetchRecurringResult {
   upserted: number;
   deactivated: number;
   linkedTransactions: number;
+  backfilledOrphans: number;
 }
+
+const ORPHAN_AMOUNT_TOLERANCE = 0.2;
 
 export async function fetchRecurringTransactions(
   plaidItemRowId: string,
@@ -136,13 +139,43 @@ export async function fetchRecurringTransactions(
         )
         .returning({ id: recurringStreams.streamId });
 
+  // Fetch current custom overrides per stream (for backfill onto linked txs)
+  const streamOverrides = new Map<
+    string,
+    { customName: string | null; customCategory: string | null }
+  >();
+  if (seenStreamIds.length > 0) {
+    const overrideRows = await db
+      .select({
+        streamId: recurringStreams.streamId,
+        customName: recurringStreams.customName,
+        customCategory: recurringStreams.customCategory,
+      })
+      .from(recurringStreams)
+      .where(inArray(recurringStreams.streamId, seenStreamIds));
+    for (const row of overrideRows) {
+      streamOverrides.set(row.streamId, {
+        customName: row.customName,
+        customCategory: row.customCategory,
+      });
+    }
+  }
+
   let linked = 0;
   for (const { stream } of tagged) {
     if (stream.transaction_ids.length === 0) continue;
+    const overrides = streamOverrides.get(stream.stream_id);
+    const updateSet: Partial<typeof transactions.$inferInsert> = {
+      recurringStreamId: stream.stream_id,
+    };
+    if (overrides?.customName != null) updateSet.customName = overrides.customName;
+    if (overrides?.customCategory != null)
+      updateSet.customCategory = overrides.customCategory;
+
     for (const chunk of chunk100(stream.transaction_ids)) {
       const result = await db
         .update(transactions)
-        .set({ recurringStreamId: stream.stream_id })
+        .set(updateSet)
         .where(
           and(
             eq(transactions.userId, item.userId),
@@ -154,11 +187,94 @@ export async function fetchRecurringTransactions(
     }
   }
 
+  const backfilledOrphans = await linkOrphanTransactions(item.userId, plaidItemRowId);
+
   return {
     upserted,
     deactivated: deactivateResult.length,
     linkedTransactions: linked,
+    backfilledOrphans,
   };
+}
+
+/**
+ * Plaid often excludes early occurrences (before the stream's first_date)
+ * from a stream's transaction_ids. This linker rescues those orphans by
+ * matching unlinked transactions to active streams on:
+ *   - same account
+ *   - same merchant_name (case-insensitive)
+ *   - amount within 20% of the stream's average_amount
+ *   - matching sign for inflow/outflow
+ *   - date strictly before the stream's first_date
+ * When a match is found, the stream's customName/customCategory are also
+ * propagated onto the orphan tx.
+ */
+async function linkOrphanTransactions(
+  userId: string,
+  plaidItemRowId: string,
+): Promise<number> {
+  const streams = await db
+    .select({
+      streamId: recurringStreams.streamId,
+      accountId: recurringStreams.accountId,
+      merchantName: recurringStreams.merchantName,
+      averageAmount: recurringStreams.averageAmount,
+      flowType: recurringStreams.flowType,
+      firstDate: recurringStreams.firstDate,
+      customName: recurringStreams.customName,
+      customCategory: recurringStreams.customCategory,
+    })
+    .from(recurringStreams)
+    .where(
+      and(
+        eq(recurringStreams.userId, userId),
+        eq(recurringStreams.plaidItemId, plaidItemRowId),
+        eq(recurringStreams.isActive, true),
+      ),
+    );
+
+  let backfilled = 0;
+  for (const stream of streams) {
+    if (!stream.merchantName || !stream.firstDate) continue;
+    const avg = Number(stream.averageAmount);
+    if (!Number.isFinite(avg) || avg === 0) continue;
+
+    const tolerance = Math.abs(avg) * ORPHAN_AMOUNT_TOLERANCE;
+    const minAmount = avg - tolerance;
+    const maxAmount = avg + tolerance;
+    // outflow stores positive amount, inflow stores negative
+    const signCondition =
+      stream.flowType === "inflow"
+        ? sql`${transactions.amount}::numeric < 0`
+        : sql`${transactions.amount}::numeric > 0`;
+
+    const updateSet: Partial<typeof transactions.$inferInsert> = {
+      recurringStreamId: stream.streamId,
+    };
+    if (stream.customName != null) updateSet.customName = stream.customName;
+    if (stream.customCategory != null)
+      updateSet.customCategory = stream.customCategory;
+
+    const updated = await db
+      .update(transactions)
+      .set(updateSet)
+      .where(
+        and(
+          eq(transactions.userId, userId),
+          eq(transactions.accountId, stream.accountId),
+          sql`${transactions.recurringStreamId} IS NULL`,
+          sql`LOWER(${transactions.merchantName}) = LOWER(${stream.merchantName})`,
+          sql`${transactions.date} < ${stream.firstDate}`,
+          sql`ABS(${transactions.amount}::numeric) BETWEEN ${Math.abs(minAmount)} AND ${Math.abs(maxAmount)}`,
+          signCondition,
+        ),
+      )
+      .returning({ id: transactions.id });
+
+    backfilled += updated.length;
+  }
+
+  return backfilled;
 }
 
 function chunk100<T>(arr: T[]): T[][] {

@@ -38,6 +38,8 @@ export const recurringStreams = pgTable(
     pfcPrimary: text("pfc_primary"),
     pfcDetailed: text("pfc_detailed"),
     pfcConfidenceLevel: text("pfc_confidence_level"),
+    customName: text("custom_name"),
+    customCategory: text("custom_category"),
     plaidUpdatedDatetime: timestamp("plaid_updated_datetime", {
       mode: "date",
     }),

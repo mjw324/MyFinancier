@@ -80,7 +80,9 @@ function buildFilterConditions(userId: string, filters: TransactionFilters) {
     conditions.push(eq(transactions.accountId, filters.accountId));
   }
   if (filters.category) {
-    conditions.push(eq(transactions.category, filters.category));
+    conditions.push(
+      sql`COALESCE(${transactions.customCategory}, ${transactions.category}) = ${filters.category}`,
+    );
   }
   if (filters.startDate && filters.endDate) {
     const endOfDay = new Date(filters.endDate);
@@ -99,6 +101,7 @@ function buildFilterConditions(userId: string, filters: TransactionFilters) {
     const pattern = `%${filters.search}%`;
     conditions.push(
       or(
+        ilike(transactions.customName, pattern),
         ilike(transactions.name, pattern),
         ilike(transactions.merchantName, pattern),
       )!,
@@ -128,16 +131,17 @@ export async function searchTransactions(
 }
 
 export async function getDistinctCategories(userId: string) {
+  const effective = sql<string>`COALESCE(${transactions.customCategory}, ${transactions.category})`;
   const rows = await db
-    .selectDistinct({ category: transactions.category })
+    .selectDistinct({ category: effective })
     .from(transactions)
     .where(
       and(
         eq(transactions.userId, userId),
-        sql`${transactions.category} IS NOT NULL`,
+        sql`COALESCE(${transactions.customCategory}, ${transactions.category}) IS NOT NULL`,
       ),
     )
-    .orderBy(transactions.category);
+    .orderBy(effective);
 
   return rows
     .map((r) => r.category!)

@@ -3,7 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { getServerSession } from "@/lib/auth/get-session";
 import { db } from "@/lib/db";
-import { plaidItems, financialAccounts, transactions } from "@/lib/db/schema";
+import {
+  plaidItems,
+  financialAccounts,
+  transactions,
+  recurringStreams,
+} from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
 import { syncTransactions } from "@/lib/plaid/sync";
 import { fetchRecurringTransactions } from "@/lib/plaid/recurring";
@@ -97,6 +102,28 @@ export async function syncPlaidItemAction(plaidItemId: string) {
     console.error(`Manual sync failed for item ${plaidItemId}:`, error);
     return { success: false as const, error: mapPlaidErrorMessage(error) };
   }
+}
+
+export async function resetTransactionCustomizationsAction() {
+  const session = await getServerSession();
+  if (!session?.user) return { success: false as const, error: "Unauthorized" };
+
+  const userId = session.user.id;
+
+  await db
+    .update(transactions)
+    .set({ customName: null, customCategory: null })
+    .where(eq(transactions.userId, userId));
+
+  await db
+    .update(recurringStreams)
+    .set({ customName: null, customCategory: null, updatedAt: new Date() })
+    .where(eq(recurringStreams.userId, userId));
+
+  revalidatePath("/transactions");
+  revalidatePath("/settings");
+  revalidatePath("/");
+  return { success: true as const };
 }
 
 function mapPlaidErrorMessage(error: unknown): string {

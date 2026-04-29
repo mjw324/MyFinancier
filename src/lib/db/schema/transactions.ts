@@ -29,6 +29,8 @@ export const transactions = pgTable(
     merchantName: text("merchant_name"),
     category: text("category"),
     categoryId: text("category_id"),
+    customName: text("custom_name"),
+    customCategory: text("custom_category"),
     pending: boolean("pending").default(false),
     recurringStreamId: text("recurring_stream_id").references(
       () => recurringStreams.streamId,

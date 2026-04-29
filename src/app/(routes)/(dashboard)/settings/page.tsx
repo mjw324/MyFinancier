@@ -7,6 +7,7 @@ import { PlaidLinkButton } from "@/components/features/accounts/plaid-link-butto
 import { UnlinkAccountDialog } from "@/components/features/settings/unlink-account-dialog";
 import { SyncAccountButton } from "@/components/features/settings/sync-account-button";
 import { TwoFactorCard } from "@/components/features/settings/two-factor-card";
+import { ResetCustomizationsDialog } from "@/components/features/settings/reset-customizations-dialog";
 import { formatRelativeDate } from "@/lib/utils/format";
 
 export const metadata: Metadata = {
@@ -127,6 +128,23 @@ export default async function SettingsPage() {
               })}
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base">Transaction Customizations</CardTitle>
+            <ResetCustomizationsDialog />
+          </div>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">
+            Click any transaction to give it a nickname or change its category.
+            For recurring transactions, edits apply to all past and future
+            occurrences. Use &quot;Reset all&quot; to clear every override and
+            restore the original values from Plaid.
+          </p>
         </CardContent>
       </Card>
     </div>

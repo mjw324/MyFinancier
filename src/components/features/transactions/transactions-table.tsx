@@ -1,3 +1,6 @@
+"use client";
+
+import { useState } from "react";
 import {
   Table,
   TableBody,
@@ -11,6 +14,7 @@ import { formatCurrency, formatDate, formatCategory, getCategoryColor } from "@/
 import { cn } from "@/lib/utils";
 import { RecurringBadge } from "@/components/features/recurring/recurring-badge";
 import { TransactionLabel } from "@/components/features/transactions/transaction-label";
+import { EditTransactionDialog } from "@/components/features/transactions/edit-transaction-dialog";
 
 interface Transaction {
   id: string;
@@ -19,6 +23,8 @@ interface Transaction {
   amount: string;
   date: Date;
   category: string | null;
+  customName: string | null;
+  customCategory: string | null;
   pending: boolean | null;
   recurringStreamId: string | null;
   financialAccount: {
@@ -28,9 +34,15 @@ interface Transaction {
 
 interface TransactionsTableProps {
   transactions: Transaction[];
+  categories: string[];
 }
 
-export function TransactionsTable({ transactions }: TransactionsTableProps) {
+export function TransactionsTable({
+  transactions,
+  categories,
+}: TransactionsTableProps) {
+  const [editing, setEditing] = useState<Transaction | null>(null);
+
   if (transactions.length === 0) {
     return (
       <div className="flex h-32 items-center justify-center rounded-lg border border-dashed">
@@ -40,76 +52,93 @@ export function TransactionsTable({ transactions }: TransactionsTableProps) {
   }
 
   return (
-    <div className="rounded-md border">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Date</TableHead>
-            <TableHead>Description</TableHead>
-            <TableHead>Category</TableHead>
-            <TableHead>Account</TableHead>
-            <TableHead className="text-right">Amount</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {transactions.map((txn) => {
-            const amount = parseFloat(txn.amount);
-            const isExpense = amount > 0;
-            return (
-              <TableRow key={txn.id}>
-                <TableCell className="whitespace-nowrap text-sm">
-                  {formatDate(txn.date)}
-                </TableCell>
-                <TableCell>
-                  <div>
-                    <p className="text-sm font-medium flex items-center gap-1.5">
-                      <TransactionLabel
-                        merchant={txn.merchantName}
-                        full={txn.name}
-                      />
-                      {txn.recurringStreamId && (
-                        <RecurringBadge streamId={txn.recurringStreamId} />
-                      )}
-                    </p>
-                    {txn.pending && (
-                      <span className="text-xs text-muted-foreground">
-                        Pending
-                      </span>
-                    )}
-                  </div>
-                </TableCell>
-                <TableCell>
-                  {txn.category ? (() => {
-                    const color = getCategoryColor(txn.category);
-                    return (
-                      <Badge
-                        className="text-xs border-0"
-                        style={{ backgroundColor: color.bg, color: color.text }}
-                      >
-                        {formatCategory(txn.category)}
-                      </Badge>
-                    );
-                  })() : (
-                    <span className="text-xs text-muted-foreground">—</span>
-                  )}
-                </TableCell>
-                <TableCell className="text-sm">
-                  {txn.financialAccount?.name ?? "—"}
-                </TableCell>
-                <TableCell
-                  className={cn(
-                    "text-right text-sm font-medium",
-                    isExpense ? "text-foreground" : "text-green-600",
-                  )}
+    <>
+      <div className="rounded-md border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Date</TableHead>
+              <TableHead>Description</TableHead>
+              <TableHead>Category</TableHead>
+              <TableHead>Account</TableHead>
+              <TableHead className="text-right">Amount</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {transactions.map((txn) => {
+              const amount = parseFloat(txn.amount);
+              const isExpense = amount > 0;
+              const displayMerchant = txn.customName ?? txn.merchantName;
+              const displayCategory = txn.customCategory ?? txn.category;
+              return (
+                <TableRow
+                  key={txn.id}
+                  className="cursor-pointer"
+                  onClick={() => setEditing(txn)}
                 >
-                  {isExpense ? "-" : "+"}
-                  {formatCurrency(Math.abs(amount))}
-                </TableCell>
-              </TableRow>
-            );
-          })}
-        </TableBody>
-      </Table>
-    </div>
+                  <TableCell className="whitespace-nowrap text-sm">
+                    {formatDate(txn.date)}
+                  </TableCell>
+                  <TableCell>
+                    <div>
+                      <p className="text-sm font-medium flex items-center gap-1.5">
+                        <TransactionLabel
+                          merchant={displayMerchant}
+                          full={txn.name}
+                        />
+                        {txn.recurringStreamId && (
+                          <RecurringBadge streamId={txn.recurringStreamId} />
+                        )}
+                      </p>
+                      {txn.pending && (
+                        <span className="text-xs text-muted-foreground">
+                          Pending
+                        </span>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    {displayCategory ? (() => {
+                      const color = getCategoryColor(displayCategory);
+                      return (
+                        <Badge
+                          className="text-xs border-0"
+                          style={{ backgroundColor: color.bg, color: color.text }}
+                        >
+                          {formatCategory(displayCategory)}
+                        </Badge>
+                      );
+                    })() : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-sm">
+                    {txn.financialAccount?.name ?? "—"}
+                  </TableCell>
+                  <TableCell
+                    className={cn(
+                      "text-right text-sm font-medium",
+                      isExpense ? "text-foreground" : "text-green-600",
+                    )}
+                  >
+                    {isExpense ? "-" : "+"}
+                    {formatCurrency(Math.abs(amount))}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </div>
+
+      {editing && (
+        <EditTransactionDialog
+          open={!!editing}
+          onOpenChange={(open) => !open && setEditing(null)}
+          transaction={editing}
+          categories={categories}
+        />
+      )}
+    </>
   );
 }

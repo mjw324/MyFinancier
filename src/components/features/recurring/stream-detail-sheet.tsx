@@ -18,6 +18,8 @@ interface StreamRow {
   streamId: string;
   description: string;
   merchantName: string | null;
+  customName: string | null;
+  customCategory: string | null;
   flowType: "inflow" | "outflow";
   frequency: string;
   status: string;
@@ -35,6 +37,7 @@ interface StreamTxn {
   amount: string;
   name: string;
   merchantName: string | null;
+  customName: string | null;
 }
 
 interface ApiResponse {
@@ -94,7 +97,7 @@ export function StreamDetailSheet({
           <SheetTitle>
             {data?.stream ? (
               <TransactionLabel
-                merchant={data.stream.merchantName}
+                merchant={data.stream.customName ?? data.stream.merchantName}
                 full={data.stream.description}
               />
             ) : (
@@ -138,7 +141,9 @@ export function StreamDetailSheet({
                       className="flex items-center justify-between px-3 py-2 text-sm"
                     >
                       <div>
-                        <p className="font-medium">{t.merchantName || t.name}</p>
+                        <p className="font-medium">
+                          {t.customName ?? t.merchantName ?? t.name}
+                        </p>
                         <p className="text-xs text-muted-foreground">
                           {formatDate(new Date(t.date))}
                         </p>

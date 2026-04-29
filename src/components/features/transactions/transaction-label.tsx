@@ -51,7 +51,6 @@ export function TransactionLabel({
         )}
       >
         {display}
-        <span aria-hidden>…</span>
       </PopoverTrigger>
       <PopoverContent
         align="start"

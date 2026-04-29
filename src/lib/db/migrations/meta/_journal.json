@@ -15,6 +15,13 @@
       "when": 1777418194379,
       "tag": "0001_omniscient_thunderbolt",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1777425113875,
+      "tag": "0002_chilly_iron_fist",
+      "breakpoints": true
     }
   ]
 }
