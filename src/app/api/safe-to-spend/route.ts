@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { and, eq, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { financialAccounts } from "@/lib/db/schema/accounts";
@@ -78,15 +78,18 @@ export async function GET(request: Request) {
 
   const balanceRow = await db
     .select({
-      total: sql<string>`COALESCE(SUM(COALESCE(${financialAccounts.availableBalance}, ${financialAccounts.currentBalance})), 0)`,
+      total: sql<string>`COALESCE(SUM(
+        CASE
+          WHEN ${financialAccounts.type} IN ('credit', 'loan')
+            THEN -1 * COALESCE(${financialAccounts.currentBalance}, 0)::numeric
+          WHEN ${financialAccounts.type} = 'depository'
+            THEN COALESCE(${financialAccounts.availableBalance}, ${financialAccounts.currentBalance}, 0)::numeric
+          ELSE 0
+        END
+      ), 0)`,
     })
     .from(financialAccounts)
-    .where(
-      and(
-        eq(financialAccounts.userId, userId),
-        eq(financialAccounts.subtype, "checking"),
-      ),
-    );
+    .where(eq(financialAccounts.userId, userId));
   const currentBalance = Number(balanceRow[0]?.total ?? 0);
 
   const safeToSpend =

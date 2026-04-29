@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { plaidItems, financialAccounts, transactions } from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
 import { syncTransactions } from "@/lib/plaid/sync";
+import { fetchRecurringTransactions } from "@/lib/plaid/recurring";
 import { PLAID_ERROR_MESSAGES } from "@/lib/plaid/types";
 
 export async function unlinkPlaidItemAction(plaidItemId: string) {
@@ -79,6 +80,14 @@ export async function syncPlaidItemAction(plaidItemId: string) {
 
   try {
     const result = await syncTransactions(plaidItemId);
+    try {
+      await fetchRecurringTransactions(plaidItemId);
+    } catch (err) {
+      console.error(
+        `Recurring fetch failed for item ${plaidItemId}:`,
+        err,
+      );
+    }
     revalidatePath("/settings");
     revalidatePath("/accounts");
     revalidatePath("/transactions");
