@@ -170,6 +170,11 @@ export function SafeToSpend() {
                         >
                           <p className="font-medium">
                             {b.merchant_name || b.description}
+                            {b.merchant_name &&
+                              b.description &&
+                              b.merchant_name.trim().toLowerCase() !==
+                                b.description.trim().toLowerCase() &&
+                              "…"}
                           </p>
                           <p className="text-xs text-muted-foreground">
                             {formatDate(new Date(b.date))}

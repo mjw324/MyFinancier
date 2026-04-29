@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatCurrency, formatDate } from "@/lib/utils/format";
 import { cn } from "@/lib/utils";
+import { TransactionLabel } from "@/components/features/transactions/transaction-label";
 
 interface StreamRow {
   streamId: string;
@@ -91,9 +92,14 @@ export function StreamDetailSheet({
       <SheetContent className="w-full sm:max-w-md overflow-y-auto">
         <SheetHeader>
           <SheetTitle>
-            {data?.stream.merchantName ||
-              data?.stream.description ||
-              "Recurring stream"}
+            {data?.stream ? (
+              <TransactionLabel
+                merchant={data.stream.merchantName}
+                full={data.stream.description}
+              />
+            ) : (
+              "Recurring stream"
+            )}
           </SheetTitle>
           <SheetDescription>
             {data?.stream

@@ -146,10 +146,15 @@ export function BillCalendar() {
                       : "border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-400",
                     e.tentative && "border-dashed",
                   )}
-                  title={`${e.merchant_name || e.description} · ${formatCurrency(Math.abs(e.amount))}`}
+                  title={`${e.description} · ${formatCurrency(Math.abs(e.amount))}`}
                 >
                   <span className="truncate">
                     {e.merchant_name || e.description}
+                    {e.merchant_name &&
+                      e.description &&
+                      e.merchant_name.trim().toLowerCase() !==
+                        e.description.trim().toLowerCase() &&
+                      "…"}
                   </span>
                   {e.has_price_change && (
                     <span className="ml-1 inline-block size-1.5 rounded-full bg-amber-500 align-middle" />

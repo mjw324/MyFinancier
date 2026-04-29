@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency, formatDate, formatCategory, getCategoryColor } from "@/lib/utils/format";
 import { cn } from "@/lib/utils";
+import { TransactionLabel } from "@/components/features/transactions/transaction-label";
 
 interface Transaction {
   id: string;
@@ -43,7 +44,11 @@ export function RecentTransactions({ transactions }: RecentTransactionsProps) {
                 >
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium">
-                      {txn.merchantName || txn.name}
+                      <TransactionLabel
+                        merchant={txn.merchantName}
+                        full={txn.name}
+                        truncate
+                      />
                     </p>
                     <p className="text-xs text-muted-foreground">
                       {formatDate(txn.date)}
