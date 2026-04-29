@@ -9,6 +9,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency, formatDate, formatCategory, getCategoryColor } from "@/lib/utils/format";
 import { cn } from "@/lib/utils";
+import { RecurringBadge } from "@/components/features/recurring/recurring-badge";
 
 interface Transaction {
   id: string;
@@ -18,6 +19,7 @@ interface Transaction {
   date: Date;
   category: string | null;
   pending: boolean | null;
+  recurringStreamId: string | null;
   financialAccount: {
     name: string;
   } | null;
@@ -59,8 +61,11 @@ export function TransactionsTable({ transactions }: TransactionsTableProps) {
                 </TableCell>
                 <TableCell>
                   <div>
-                    <p className="text-sm font-medium">
-                      {txn.merchantName || txn.name}
+                    <p className="text-sm font-medium flex items-center gap-1.5">
+                      <span>{txn.merchantName || txn.name}</span>
+                      {txn.recurringStreamId && (
+                        <RecurringBadge streamId={txn.recurringStreamId} />
+                      )}
                     </p>
                     {txn.pending && (
                       <span className="text-xs text-muted-foreground">

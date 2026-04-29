@@ -20,6 +20,7 @@ export async function createLinkToken(
     country_codes: [CountryCode.Us],
     user: { client_user_id: userId },
     products: [Products.Transactions],
+    transactions: { days_requested: 730 },
     webhook: process.env.PLAID_WEBHOOK_URL || undefined,
     redirect_uri: process.env.PLAID_REDIRECT_URI || undefined,
   });

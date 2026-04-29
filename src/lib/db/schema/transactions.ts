@@ -8,6 +8,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { user } from "./auth";
 import { financialAccounts } from "./accounts";
+import { recurringStreams } from "./recurring";
 
 export const transactions = pgTable(
   "transactions",
@@ -29,10 +30,15 @@ export const transactions = pgTable(
     category: text("category"),
     categoryId: text("category_id"),
     pending: boolean("pending").default(false),
+    recurringStreamId: text("recurring_stream_id").references(
+      () => recurringStreams.streamId,
+      { onDelete: "set null" },
+    ),
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow(),
   },
   (table) => [
     index("transactions_user_id_idx").on(table.userId),
     index("transactions_date_idx").on(table.date),
+    index("transactions_recurring_stream_id_idx").on(table.recurringStreamId),
   ],
 ).enableRLS();

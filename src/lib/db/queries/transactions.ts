@@ -1,4 +1,15 @@
-import { and, between, count, desc, eq, ilike, or, sql } from "drizzle-orm";
+import {
+  and,
+  between,
+  count,
+  desc,
+  eq,
+  ilike,
+  isNotNull,
+  isNull,
+  or,
+  sql,
+} from "drizzle-orm";
 import { db } from "..";
 import { transactions } from "../schema";
 
@@ -59,6 +70,7 @@ export interface TransactionFilters {
   category?: string;
   startDate?: Date;
   endDate?: Date;
+  recurring?: "all" | "recurring" | "onetime";
 }
 
 function buildFilterConditions(userId: string, filters: TransactionFilters) {
@@ -91,6 +103,11 @@ function buildFilterConditions(userId: string, filters: TransactionFilters) {
         ilike(transactions.merchantName, pattern),
       )!,
     );
+  }
+  if (filters.recurring === "recurring") {
+    conditions.push(isNotNull(transactions.recurringStreamId));
+  } else if (filters.recurring === "onetime") {
+    conditions.push(isNull(transactions.recurringStreamId));
   }
 
   return and(...conditions);

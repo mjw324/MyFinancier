@@ -3,6 +3,7 @@ import { user, session, account, twoFactor } from "./auth";
 import { plaidItems } from "./plaid";
 import { financialAccounts } from "./accounts";
 import { transactions } from "./transactions";
+import { recurringStreams } from "./recurring";
 import { categories } from "./categories";
 import { budgets } from "./budgets";
 
@@ -12,6 +13,7 @@ export const userRelations = relations(user, ({ many }) => ({
   plaidItems: many(plaidItems),
   financialAccounts: many(financialAccounts),
   transactions: many(transactions),
+  recurringStreams: many(recurringStreams),
   categories: many(categories),
   budgets: many(budgets),
   twoFactors: many(twoFactor),
@@ -44,6 +46,7 @@ export const plaidItemsRelations = relations(plaidItems, ({ one, many }) => ({
     references: [user.id],
   }),
   financialAccounts: many(financialAccounts),
+  recurringStreams: many(recurringStreams),
 }));
 
 export const financialAccountsRelations = relations(
@@ -58,6 +61,7 @@ export const financialAccountsRelations = relations(
       references: [plaidItems.id],
     }),
     transactions: many(transactions),
+    recurringStreams: many(recurringStreams),
   }),
 );
 
@@ -70,7 +74,30 @@ export const transactionsRelations = relations(transactions, ({ one }) => ({
     fields: [transactions.accountId],
     references: [financialAccounts.id],
   }),
+  recurringStream: one(recurringStreams, {
+    fields: [transactions.recurringStreamId],
+    references: [recurringStreams.streamId],
+  }),
 }));
+
+export const recurringStreamsRelations = relations(
+  recurringStreams,
+  ({ one, many }) => ({
+    user: one(user, {
+      fields: [recurringStreams.userId],
+      references: [user.id],
+    }),
+    plaidItem: one(plaidItems, {
+      fields: [recurringStreams.plaidItemId],
+      references: [plaidItems.id],
+    }),
+    financialAccount: one(financialAccounts, {
+      fields: [recurringStreams.accountId],
+      references: [financialAccounts.id],
+    }),
+    transactions: many(transactions),
+  }),
+);
 
 export const categoriesRelations = relations(categories, ({ one, many }) => ({
   user: one(user, {

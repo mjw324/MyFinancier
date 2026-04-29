@@ -11,6 +11,8 @@ import { RecentTransactions } from "./recent-transactions";
 import { SpendingOverTime } from "@/components/charts/spending-over-time";
 import { SpendingByCategory } from "@/components/charts/spending-by-category";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { SafeToSpend } from "@/components/features/recurring/safe-to-spend";
+import { BillCalendar } from "@/components/features/recurring/bill-calendar";
 
 const RANGE_LABELS: Record<string, string> = {
   week: "Past week",
@@ -65,6 +67,15 @@ export function DashboardContent({
           previousExpenses={rangeData?.previousExpenses ?? 0}
           rangeLabel={RANGE_LABELS[range]}
         />
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-3">
+        <div className="lg:col-span-1">
+          <SafeToSpend />
+        </div>
+        <div className="lg:col-span-2">
+          <BillCalendar />
+        </div>
       </div>
 
       <div

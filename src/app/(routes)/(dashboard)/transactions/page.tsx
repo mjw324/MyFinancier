@@ -26,12 +26,18 @@ export default async function TransactionsPage({
   const userId = session!.user.id;
   const params = await searchParams;
 
+  const recurringParam =
+    params.recurring === "recurring" || params.recurring === "onetime"
+      ? params.recurring
+      : undefined;
+
   const filters: TransactionFilters = {
     search: params.search || undefined,
     accountId: params.account || undefined,
     category: params.category || undefined,
     startDate: params.from ? new Date(params.from) : undefined,
     endDate: params.to ? new Date(params.to) : undefined,
+    recurring: recurringParam,
   };
 
   const currentPage = Math.max(1, parseInt(params.page ?? "1", 10) || 1);

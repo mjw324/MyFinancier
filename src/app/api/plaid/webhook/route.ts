@@ -5,8 +5,10 @@ import { decodeProtectedHeader, importJWK, jwtVerify } from "jose";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { db } from "@/lib/db";
 import { plaidItems } from "@/lib/db/schema/plaid";
+import { recurringStreams } from "@/lib/db/schema/recurring";
 import { plaidClient } from "@/lib/plaid/client";
 import { syncTransactions } from "@/lib/plaid/sync";
+import { fetchRecurringTransactions } from "@/lib/plaid/recurring";
 
 // --- Webhook Verification ---
 
@@ -101,6 +103,12 @@ const ItemPendingExpirationSchema = z.object({
   consent_expiration_time: z.string(),
 });
 
+const RecurringTransactionsUpdateSchema = z.object({
+  webhook_type: z.literal("TRANSACTIONS"),
+  webhook_code: z.literal("RECURRING_TRANSACTIONS_UPDATE"),
+  item_id: z.string(),
+});
+
 // --- Route Handler ---
 
 export async function POST(request: Request) {
@@ -141,6 +149,11 @@ export async function POST(request: Request) {
       webhookCode === "PENDING_EXPIRATION"
     ) {
       await handlePendingExpiration(body);
+    } else if (
+      webhookType === "TRANSACTIONS" &&
+      webhookCode === "RECURRING_TRANSACTIONS_UPDATE"
+    ) {
+      await handleRecurringTransactionsUpdate(body);
     } else {
       console.log(`Unhandled webhook: ${webhookType}/${webhookCode}`);
     }
@@ -175,6 +188,54 @@ async function handleSyncUpdatesAvailable(body: unknown) {
     await syncTransactions(item.id);
   } catch (error) {
     console.error(`Webhook sync failed for item ${item.id}:`, error);
+    return;
+  }
+
+  // Backfill recurring streams once: either Plaid signals historical sync is
+  // complete, or this Item was linked before the recurring feature shipped and
+  // has no streams yet.
+  try {
+    const shouldFetch =
+      parsed.historical_update_complete === true ||
+      (await isMissingRecurringStreams(item.id));
+    if (shouldFetch) {
+      await fetchRecurringTransactions(item.id);
+    }
+  } catch (error) {
+    console.error(
+      `Recurring fetch failed for item ${item.id} after sync:`,
+      error,
+    );
+  }
+}
+
+async function isMissingRecurringStreams(plaidItemRowId: string) {
+  const existing = await db.query.recurringStreams.findFirst({
+    where: eq(recurringStreams.plaidItemId, plaidItemRowId),
+  });
+  return !existing;
+}
+
+async function handleRecurringTransactionsUpdate(body: unknown) {
+  const parsed = RecurringTransactionsUpdateSchema.parse(body);
+
+  const item = await db.query.plaidItems.findFirst({
+    where: eq(plaidItems.itemId, parsed.item_id),
+  });
+  if (!item) {
+    console.error(
+      `Webhook: plaid item not found for item_id ${parsed.item_id}`,
+    );
+    return;
+  }
+
+  try {
+    await fetchRecurringTransactions(item.id);
+  } catch (error) {
+    console.error(
+      `RECURRING_TRANSACTIONS_UPDATE handler failed for item ${item.id}:`,
+      error,
+    );
   }
 }
 
