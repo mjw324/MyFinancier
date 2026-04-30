@@ -6,20 +6,32 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-import { formatCurrency } from "@/lib/utils/format";
+import { formatCompactCurrency, formatCurrency } from "@/lib/utils/format";
 import { StreamDetailSheet } from "./stream-detail-sheet";
 
 interface BillEvent {
   stream_id: string;
   date: string;
   amount: number;
-  merchant_name: string | null;
-  description: string;
+  label: string;
   flow_type: "inflow" | "outflow";
   frequency: string;
   status: string;
   has_price_change: boolean;
   tentative: boolean;
+  posted: boolean;
+}
+
+function formatBadgeAmount(n: number): string {
+  const abs = Math.abs(n);
+  if (abs >= 1000) {
+    // Intl compact emits "$1.2K"; lowercase the suffix to match the
+    // requested "$1.2k" style.
+    return formatCompactCurrency(abs).replace(/([KMB])$/, (s) =>
+      s.toLowerCase(),
+    );
+  }
+  return `$${Math.round(abs)}`;
 }
 
 interface ApiResponse {
@@ -118,15 +130,17 @@ export function BillCalendar() {
             <div
               key={i}
               className={cn(
-                "bg-card min-h-[72px] p-1.5 flex flex-col gap-1",
+                "bg-card min-h-[72px] p-1.5 flex flex-col gap-1 relative",
                 !cell.inMonth && "bg-muted/20",
+                cell.isToday && "ring-2 ring-primary ring-inset",
               )}
             >
               <span
                 className={cn(
-                  "text-[10px] font-medium",
-                  cell.isToday && "text-primary",
-                  !cell.inMonth && "text-muted-foreground/60",
+                  "text-[10px] font-medium inline-flex items-center justify-center",
+                  cell.isToday &&
+                    "size-4 rounded-full bg-primary text-primary-foreground",
+                  !cell.isToday && !cell.inMonth && "text-muted-foreground/60",
                 )}
               >
                 {cell.date.getDate()}
@@ -134,33 +148,46 @@ export function BillCalendar() {
               {loading && cell.inMonth && i % 7 === 3 && (
                 <Skeleton className="h-3 w-full" />
               )}
-              {cell.events.map((e) => (
-                <button
-                  key={`${e.stream_id}-${e.date}`}
-                  type="button"
-                  onClick={() => setOpenStreamId(e.stream_id)}
-                  className={cn(
-                    "text-left text-[10px] leading-tight rounded px-1 py-0.5 truncate border",
-                    e.flow_type === "inflow"
-                      ? "border-green-500/40 bg-green-500/10 text-green-700 dark:text-green-400"
-                      : "border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-400",
-                    e.tentative && "border-dashed",
-                  )}
-                  title={`${e.description} · ${formatCurrency(Math.abs(e.amount))}`}
-                >
-                  <span className="truncate">
-                    {e.merchant_name || e.description}
-                    {e.merchant_name &&
-                      e.description &&
-                      e.merchant_name.trim().toLowerCase() !==
-                        e.description.trim().toLowerCase() &&
-                      "…"}
-                  </span>
-                  {e.has_price_change && (
-                    <span className="ml-1 inline-block size-1.5 rounded-full bg-amber-500 align-middle" />
-                  )}
-                </button>
-              ))}
+              {cell.events.map((e) => {
+                const isPast = e.posted;
+                const inflowFuture =
+                  "border-green-500/40 bg-green-500/10 text-green-700 dark:text-green-400";
+                const outflowFuture =
+                  "border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-400";
+                const inflowPast =
+                  "border-green-500/25 bg-green-500/5 text-green-700/60 dark:text-green-400/55 saturate-50";
+                const outflowPast =
+                  "border-rose-500/25 bg-rose-500/5 text-rose-700/60 dark:text-rose-400/55 saturate-50";
+                const tone =
+                  e.flow_type === "inflow"
+                    ? isPast
+                      ? inflowPast
+                      : inflowFuture
+                    : isPast
+                      ? outflowPast
+                      : outflowFuture;
+                return (
+                  <button
+                    key={`${e.stream_id}-${e.date}`}
+                    type="button"
+                    onClick={() => setOpenStreamId(e.stream_id)}
+                    className={cn(
+                      "text-left text-[10px] leading-tight rounded px-1 py-0.5 border flex items-center gap-1 min-w-0",
+                      tone,
+                      e.tentative && "border-dashed",
+                    )}
+                    title={`${e.label} · ${formatCurrency(Math.abs(e.amount))}`}
+                  >
+                    <span className="truncate flex-1 min-w-0">{e.label}</span>
+                    {e.has_price_change && (
+                      <span className="inline-block size-1.5 rounded-full bg-amber-500 shrink-0" />
+                    )}
+                    <span className="shrink-0 tabular-nums font-medium">
+                      {formatBadgeAmount(e.amount)}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           ))}
         </div>

@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, ne } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lte, ne } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { recurringStreams } from "@/lib/db/schema/recurring";
 import { transactions } from "@/lib/db/schema/transactions";
@@ -76,8 +76,57 @@ export function toProjectionInput(
     lastAmount: Number(row.lastAmount),
     merchantName: row.merchantName,
     description: row.description,
+    customName: row.customName,
     recentTransactionDates: recentDates,
   };
+}
+
+export interface PostedStreamTransaction {
+  streamId: string;
+  date: Date;
+  amount: number;
+  customName: string | null;
+  merchantName: string | null;
+  name: string;
+}
+
+export async function getStreamTransactionsInRange(
+  userId: string,
+  streamIds: string[],
+  from: Date,
+  to: Date,
+): Promise<PostedStreamTransaction[]> {
+  if (streamIds.length === 0) return [];
+  const rows = await db
+    .select({
+      streamId: transactions.recurringStreamId,
+      date: transactions.date,
+      amount: transactions.amount,
+      customName: transactions.customName,
+      merchantName: transactions.merchantName,
+      name: transactions.name,
+    })
+    .from(transactions)
+    .where(
+      and(
+        eq(transactions.userId, userId),
+        inArray(transactions.recurringStreamId, streamIds),
+        gte(transactions.date, from),
+        lte(transactions.date, to),
+      ),
+    )
+    .orderBy(desc(transactions.date));
+
+  return rows
+    .filter((r): r is typeof r & { streamId: string } => r.streamId !== null)
+    .map((r) => ({
+      streamId: r.streamId,
+      date: r.date,
+      amount: Number(r.amount),
+      customName: r.customName,
+      merchantName: r.merchantName,
+      name: r.name,
+    }));
 }
 
 export async function getRecentTransactionDatesByStream(

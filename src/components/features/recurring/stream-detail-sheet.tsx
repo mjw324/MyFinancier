@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatCurrency, formatDate } from "@/lib/utils/format";
+import { displayName, formatCurrency, formatDate } from "@/lib/utils/format";
 import { cn } from "@/lib/utils";
 import { TransactionLabel } from "@/components/features/transactions/transaction-label";
 
@@ -97,7 +97,12 @@ export function StreamDetailSheet({
           <SheetTitle>
             {data?.stream ? (
               <TransactionLabel
-                merchant={data.stream.customName ?? data.stream.merchantName}
+                merchant={
+                  displayName({
+                    customName: data.stream.customName,
+                    merchantName: data.stream.merchantName,
+                  }) || null
+                }
                 full={data.stream.description}
               />
             ) : (
@@ -142,7 +147,11 @@ export function StreamDetailSheet({
                     >
                       <div>
                         <p className="font-medium">
-                          {t.customName ?? t.merchantName ?? t.name}
+                          {displayName({
+                            customName: t.customName,
+                            merchantName: t.merchantName,
+                            fallback: t.name,
+                          })}
                         </p>
                         <p className="text-xs text-muted-foreground">
                           {formatDate(new Date(t.date))}

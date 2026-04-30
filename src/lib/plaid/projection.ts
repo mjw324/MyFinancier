@@ -26,6 +26,7 @@ export interface ProjectionInputStream {
   lastAmount: number;
   merchantName: string | null;
   description: string;
+  customName: string | null;
   /** Optional: posted dates of recent transactions, newest first.
    *  Used to derive the two days-of-month for SEMI_MONTHLY streams. */
   recentTransactionDates?: Date[];
@@ -40,6 +41,7 @@ export interface ProjectedEvent {
   status: StreamStatus;
   merchantName: string | null;
   description: string;
+  customName: string | null;
   hasPriceChange: boolean;
   tentative: boolean;
 }
@@ -71,6 +73,7 @@ export function projectStreamEvents(
     status: stream.status,
     merchantName: stream.merchantName,
     description: stream.description,
+    customName: stream.customName,
     hasPriceChange,
     tentative,
   });

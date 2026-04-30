@@ -148,6 +148,40 @@ export async function getDistinctCategories(userId: string) {
     .filter(Boolean);
 }
 
+export function hasActiveFilters(filters: TransactionFilters): boolean {
+  return Boolean(
+    filters.search ||
+      filters.accountId ||
+      filters.category ||
+      filters.startDate ||
+      filters.endDate ||
+      (filters.recurring && filters.recurring !== "all"),
+  );
+}
+
+export async function getTransactionTotals(
+  userId: string,
+  filters: TransactionFilters = {},
+) {
+  const [result] = await db
+    .select({
+      count: count(),
+      expenses: sql<string>`COALESCE(SUM(CASE WHEN ${transactions.amount} > 0 THEN ${transactions.amount} ELSE 0 END), 0)`,
+      incomeNeg: sql<string>`COALESCE(SUM(CASE WHEN ${transactions.amount} < 0 THEN ${transactions.amount} ELSE 0 END), 0)`,
+    })
+    .from(transactions)
+    .where(buildFilterConditions(userId, filters));
+
+  const expenses = parseFloat(result?.expenses ?? "0");
+  const income = -parseFloat(result?.incomeNeg ?? "0");
+  return {
+    count: result?.count ?? 0,
+    income,
+    expenses,
+    net: expenses - income,
+  };
+}
+
 export async function getTransactionCount(
   userId: string,
   filters: TransactionFilters = {},

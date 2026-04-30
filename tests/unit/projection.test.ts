@@ -19,6 +19,7 @@ function baseStream(
     lastAmount: 100,
     merchantName: "Acme",
     description: "Acme Subscription",
+    customName: null,
     ...overrides,
   };
 }

@@ -3,12 +3,15 @@ import { getServerSession } from "@/lib/auth/get-session";
 import {
   searchTransactions,
   getTransactionCount,
+  getTransactionTotals,
   getDistinctCategories,
+  hasActiveFilters,
   type TransactionFilters,
 } from "@/lib/db/queries/transactions";
 import { getAccountsByUserId } from "@/lib/db/queries/accounts";
 import { TransactionFilters as TransactionFiltersUI } from "@/components/features/transactions/transaction-filters";
 import { TransactionsTable } from "@/components/features/transactions/transactions-table";
+import { TransactionTotals } from "@/components/features/transactions/transaction-totals";
 import { Pagination } from "@/components/features/transactions/pagination";
 
 export const metadata: Metadata = {
@@ -43,12 +46,16 @@ export default async function TransactionsPage({
   const currentPage = Math.max(1, parseInt(params.page ?? "1", 10) || 1);
   const offset = (currentPage - 1) * PAGE_SIZE;
 
-  const [transactions, totalCount, accounts, categoryNames] = await Promise.all([
-    searchTransactions(userId, filters, { limit: PAGE_SIZE, offset }),
-    getTransactionCount(userId, filters),
-    getAccountsByUserId(userId),
-    getDistinctCategories(userId),
-  ]);
+  const filtersActive = hasActiveFilters(filters);
+
+  const [transactions, totalCount, accounts, categoryNames, totals] =
+    await Promise.all([
+      searchTransactions(userId, filters, { limit: PAGE_SIZE, offset }),
+      getTransactionCount(userId, filters),
+      getAccountsByUserId(userId),
+      getDistinctCategories(userId),
+      filtersActive ? getTransactionTotals(userId, filters) : null,
+    ]);
 
   const totalPages = Math.ceil(totalCount / PAGE_SIZE);
 
@@ -68,6 +75,15 @@ export default async function TransactionsPage({
         accounts={accountOptions}
         categories={categoryOptions}
       />
+
+      {totals && (
+        <TransactionTotals
+          count={totals.count}
+          income={totals.income}
+          expenses={totals.expenses}
+          net={totals.net}
+        />
+      )}
 
       <TransactionsTable
         transactions={transactions}

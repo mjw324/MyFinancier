@@ -30,6 +30,25 @@ export function formatCompactCurrency(amount: number): string {
   return compactCurrencyFormatter.format(amount);
 }
 
+/**
+ * Single source of truth for resolving the human-facing label for a
+ * transaction or recurring stream. User-set aliases (`customName`) win over
+ * Plaid's enriched merchant name, which wins over the raw description/name.
+ * Use this anywhere you'd otherwise write `customName ?? merchantName ?? …`.
+ */
+export function displayName(parts: {
+  customName?: string | null;
+  merchantName?: string | null;
+  fallback?: string | null;
+}): string {
+  return (
+    parts.customName?.trim() ||
+    parts.merchantName?.trim() ||
+    parts.fallback?.trim() ||
+    ""
+  );
+}
+
 export function formatDate(
   date: Date | string,
   style: "short" | "long" = "short",
