@@ -22,8 +22,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { RotateCcw } from "lucide-react";
-import { formatCategory } from "@/lib/utils/format";
+import { displayName, formatCategory } from "@/lib/utils/format";
 import { updateTransactionOverridesAction } from "@/app/(routes)/(dashboard)/transactions/actions";
+import { ClassifyPopover } from "@/components/features/transactions/classify-popover";
 
 const NONE_CATEGORY = "__none__";
 
@@ -34,10 +35,15 @@ interface EditTransactionDialogProps {
     id: string;
     name: string;
     merchantName: string | null;
+    amount: string;
     category: string | null;
     customName: string | null;
     customCategory: string | null;
     recurringStreamId: string | null;
+    spendingType: string | null;
+    spendingTypeSource: string | null;
+    normalizedMerchant: string | null;
+    nameSignature: string | null;
   };
   categories: string[];
 }
@@ -174,6 +180,28 @@ export function EditTransactionDialog({
               </p>
             )}
           </div>
+
+          {parseFloat(transaction.amount) > 0 && (
+            <div className="space-y-2">
+              <Label>Spending type</Label>
+              <div>
+                <ClassifyPopover
+                  transactionId={transaction.id}
+                  spendingType={transaction.spendingType}
+                  source={transaction.spendingTypeSource}
+                  recurringStreamId={transaction.recurringStreamId}
+                  normalizedMerchant={transaction.normalizedMerchant}
+                  nameSignature={transaction.nameSignature}
+                  merchantDisplay={
+                    displayName({
+                      customName: transaction.customName,
+                      merchantName: transaction.merchantName,
+                    }) || transaction.name
+                  }
+                />
+              </div>
+            </div>
+          )}
         </div>
 
         <DialogFooter>

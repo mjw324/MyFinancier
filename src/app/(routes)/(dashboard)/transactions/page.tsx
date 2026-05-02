@@ -34,6 +34,13 @@ export default async function TransactionsPage({
       ? params.recurring
       : undefined;
 
+  const spendingTypeParam =
+    params.spendingType === "necessary" ||
+    params.spendingType === "discretionary" ||
+    params.spendingType === "unclassified"
+      ? params.spendingType
+      : undefined;
+
   const filters: TransactionFilters = {
     search: params.search || undefined,
     accountId: params.account || undefined,
@@ -41,6 +48,7 @@ export default async function TransactionsPage({
     startDate: params.from ? new Date(params.from) : undefined,
     endDate: params.to ? new Date(params.to) : undefined,
     recurring: recurringParam,
+    spendingType: spendingTypeParam,
   };
 
   const currentPage = Math.max(1, parseInt(params.page ?? "1", 10) || 1);

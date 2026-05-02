@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 import { RecurringBadge } from "@/components/features/recurring/recurring-badge";
 import { TransactionLabel } from "@/components/features/transactions/transaction-label";
 import { EditTransactionDialog } from "@/components/features/transactions/edit-transaction-dialog";
+import { ClassifyPopover } from "@/components/features/transactions/classify-popover";
 
 interface Transaction {
   id: string;
@@ -27,6 +28,10 @@ interface Transaction {
   customCategory: string | null;
   pending: boolean | null;
   recurringStreamId: string | null;
+  spendingType: string | null;
+  spendingTypeSource: string | null;
+  normalizedMerchant: string | null;
+  nameSignature: string | null;
   financialAccount: {
     name: string;
   } | null;
@@ -60,6 +65,7 @@ export function TransactionsTable({
               <TableHead>Date</TableHead>
               <TableHead>Description</TableHead>
               <TableHead>Category</TableHead>
+              <TableHead>Spending Type</TableHead>
               <TableHead>Account</TableHead>
               <TableHead className="text-right">Amount</TableHead>
             </TableRow>
@@ -113,6 +119,21 @@ export function TransactionsTable({
                         </Badge>
                       );
                     })() : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    {isExpense ? (
+                      <ClassifyPopover
+                        transactionId={txn.id}
+                        spendingType={txn.spendingType}
+                        source={txn.spendingTypeSource}
+                        recurringStreamId={txn.recurringStreamId}
+                        normalizedMerchant={txn.normalizedMerchant}
+                        nameSignature={txn.nameSignature}
+                        merchantDisplay={displayMerchant}
+                      />
+                    ) : (
                       <span className="text-xs text-muted-foreground">—</span>
                     )}
                   </TableCell>

@@ -13,6 +13,7 @@ import { SpendingByCategory } from "@/components/charts/spending-by-category";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SafeToSpend } from "@/components/features/recurring/safe-to-spend";
 import { BillCalendar } from "@/components/features/recurring/bill-calendar";
+import { NecessaryVsDiscretionary } from "./necessary-vs-discretionary";
 
 const RANGE_LABELS: Record<string, string> = {
   week: "Past week",
@@ -95,6 +96,15 @@ export function DashboardContent({
           </CardContent>
         </Card>
       </div>
+
+      {rangeData?.spendingTypeTotals && (
+        <div className={isPending ? "opacity-50 transition-opacity" : ""}>
+          <NecessaryVsDiscretionary
+            totals={rangeData.spendingTypeTotals}
+            percentages={rangeData.spendingTypePercentages}
+          />
+        </div>
+      )}
 
       <Card className={isPending ? "opacity-50 transition-opacity" : ""}>
         <CardHeader>

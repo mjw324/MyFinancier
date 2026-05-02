@@ -55,7 +55,8 @@ export function TransactionFilters({
     searchParams.has("category") ||
     searchParams.has("from") ||
     searchParams.has("to") ||
-    searchParams.has("recurring");
+    searchParams.has("recurring") ||
+    searchParams.has("spendingType");
 
   return (
     <div className="flex flex-wrap items-center gap-3">
@@ -138,6 +139,23 @@ export function TransactionFilters({
           <SelectItem value="all">All transactions</SelectItem>
           <SelectItem value="recurring">Recurring only</SelectItem>
           <SelectItem value="onetime">One-time only</SelectItem>
+        </SelectContent>
+      </Select>
+
+      <Select
+        value={searchParams.get("spendingType") ?? "all"}
+        onValueChange={(value) =>
+          updateParam("spendingType", value === "all" ? null : value)
+        }
+      >
+        <SelectTrigger className="w-[180px]">
+          <SelectValue placeholder="All spending types" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">All spending types</SelectItem>
+          <SelectItem value="necessary">Necessary</SelectItem>
+          <SelectItem value="discretionary">Discretionary</SelectItem>
+          <SelectItem value="unclassified">Unclassified</SelectItem>
         </SelectContent>
       </Select>
 

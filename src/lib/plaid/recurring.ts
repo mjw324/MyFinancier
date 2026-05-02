@@ -6,6 +6,7 @@ import { financialAccounts } from "@/lib/db/schema/accounts";
 import { transactions } from "@/lib/db/schema/transactions";
 import { recurringStreams } from "@/lib/db/schema/recurring";
 import { decrypt } from "@/lib/utils/encryption";
+import { applySpendingClassifications } from "@/lib/spending/classify";
 import { plaidClient } from "./client";
 
 type FlowType = "inflow" | "outflow";
@@ -162,6 +163,7 @@ export async function fetchRecurringTransactions(
   }
 
   let linked = 0;
+  const touchedIds = new Set<string>();
   for (const { stream } of tagged) {
     if (stream.transaction_ids.length === 0) continue;
     const overrides = streamOverrides.get(stream.stream_id);
@@ -184,16 +186,22 @@ export async function fetchRecurringTransactions(
         )
         .returning({ id: transactions.id });
       linked += result.length;
+      for (const r of result) touchedIds.add(r.id);
     }
   }
 
-  const backfilledOrphans = await linkOrphanTransactions(item.userId, plaidItemRowId);
+  const orphanResult = await linkOrphanTransactions(item.userId, plaidItemRowId);
+  for (const id of orphanResult.touchedIds) touchedIds.add(id);
+
+  if (touchedIds.size > 0) {
+    await applySpendingClassifications(item.userId, [...touchedIds]);
+  }
 
   return {
     upserted,
     deactivated: deactivateResult.length,
     linkedTransactions: linked,
-    backfilledOrphans,
+    backfilledOrphans: orphanResult.count,
   };
 }
 
@@ -212,7 +220,7 @@ export async function fetchRecurringTransactions(
 async function linkOrphanTransactions(
   userId: string,
   plaidItemRowId: string,
-): Promise<number> {
+): Promise<{ count: number; touchedIds: string[] }> {
   const streams = await db
     .select({
       streamId: recurringStreams.streamId,
@@ -234,6 +242,7 @@ async function linkOrphanTransactions(
     );
 
   let backfilled = 0;
+  const touchedIds: string[] = [];
   for (const stream of streams) {
     if (!stream.merchantName || !stream.firstDate) continue;
     const avg = Number(stream.averageAmount);
@@ -272,9 +281,10 @@ async function linkOrphanTransactions(
       .returning({ id: transactions.id });
 
     backfilled += updated.length;
+    for (const u of updated) touchedIds.push(u.id);
   }
 
-  return backfilled;
+  return { count: backfilled, touchedIds };
 }
 
 function chunk100<T>(arr: T[]): T[][] {

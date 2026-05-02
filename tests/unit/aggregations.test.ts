@@ -1,7 +1,9 @@
 import { describe, it, expect } from "vitest";
 import {
+  aggregateBySpendingType,
   aggregateIncomeAndExpenses,
   calculateSavingsRate,
+  spendingTypePercentagesOfIncome,
 } from "@/lib/utils/aggregations";
 
 const t = (amount: string) => ({ amount });
@@ -103,5 +105,60 @@ describe("calculateSavingsRate (Savings Rate widget)", () => {
   it("rounds to integer percent (matches dashboard display)", () => {
     // (1000 - 333.33) / 1000 * 100 = 66.667 → rounds to 67
     expect(calculateSavingsRate(1000, 333.33)).toBe(67);
+  });
+});
+
+describe("aggregateBySpendingType", () => {
+  it("buckets expenses by spendingType and ignores income", () => {
+    const result = aggregateBySpendingType([
+      { amount: "-1000.00" },
+      { amount: "100.00", spendingType: "necessary" },
+      { amount: "50.00", spendingType: "discretionary" },
+      { amount: "25.00", spendingType: null },
+      { amount: "10.00" },
+    ]);
+    expect(result).toEqual({
+      necessary: 100,
+      discretionary: 50,
+      unclassified: 35,
+      totalExpenses: 185,
+      income: 1000,
+    });
+  });
+
+  it("returns all zeros for empty input", () => {
+    expect(aggregateBySpendingType([])).toEqual({
+      necessary: 0,
+      discretionary: 0,
+      unclassified: 0,
+      totalExpenses: 0,
+      income: 0,
+    });
+  });
+});
+
+describe("spendingTypePercentagesOfIncome", () => {
+  it("computes percentages of income", () => {
+    expect(
+      spendingTypePercentagesOfIncome({
+        necessary: 500,
+        discretionary: 250,
+        unclassified: 100,
+        totalExpenses: 850,
+        income: 1000,
+      }),
+    ).toEqual({ necessary: 50, discretionary: 25, unclassified: 10 });
+  });
+
+  it("returns nulls when income is zero or negative", () => {
+    expect(
+      spendingTypePercentagesOfIncome({
+        necessary: 100,
+        discretionary: 0,
+        unclassified: 0,
+        totalExpenses: 100,
+        income: 0,
+      }),
+    ).toEqual({ necessary: null, discretionary: null, unclassified: null });
   });
 });

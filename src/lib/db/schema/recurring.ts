@@ -1,11 +1,13 @@
 import {
   boolean,
+  check,
   index,
   numeric,
   pgTable,
   text,
   timestamp,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { user } from "./auth";
 import { plaidItems } from "./plaid";
 import { financialAccounts } from "./accounts";
@@ -40,6 +42,7 @@ export const recurringStreams = pgTable(
     pfcConfidenceLevel: text("pfc_confidence_level"),
     customName: text("custom_name"),
     customCategory: text("custom_category"),
+    spendingType: text("spending_type"),
     plaidUpdatedDatetime: timestamp("plaid_updated_datetime", {
       mode: "date",
     }),
@@ -54,6 +57,10 @@ export const recurringStreams = pgTable(
     index("recurring_streams_account_predicted_idx").on(
       table.accountId,
       table.predictedNextDate,
+    ),
+    check(
+      "recurring_streams_spending_type_check",
+      sql`${table.spendingType} IS NULL OR ${table.spendingType} IN ('necessary','discretionary')`,
     ),
   ],
 ).enableRLS();

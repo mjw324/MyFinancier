@@ -71,6 +71,7 @@ export interface TransactionFilters {
   startDate?: Date;
   endDate?: Date;
   recurring?: "all" | "recurring" | "onetime";
+  spendingType?: "necessary" | "discretionary" | "unclassified";
 }
 
 function buildFilterConditions(userId: string, filters: TransactionFilters) {
@@ -111,6 +112,15 @@ function buildFilterConditions(userId: string, filters: TransactionFilters) {
     conditions.push(isNotNull(transactions.recurringStreamId));
   } else if (filters.recurring === "onetime") {
     conditions.push(isNull(transactions.recurringStreamId));
+  }
+  if (filters.spendingType === "necessary") {
+    conditions.push(eq(transactions.spendingType, "necessary"));
+  } else if (filters.spendingType === "discretionary") {
+    conditions.push(eq(transactions.spendingType, "discretionary"));
+  } else if (filters.spendingType === "unclassified") {
+    // Spending only (positive amount) and no spendingType set.
+    conditions.push(isNull(transactions.spendingType));
+    conditions.push(sql`${transactions.amount}::numeric > 0`);
   }
 
   return and(...conditions);
@@ -155,7 +165,8 @@ export function hasActiveFilters(filters: TransactionFilters): boolean {
       filters.category ||
       filters.startDate ||
       filters.endDate ||
-      (filters.recurring && filters.recurring !== "all"),
+      (filters.recurring && filters.recurring !== "all") ||
+      filters.spendingType,
   );
 }
 

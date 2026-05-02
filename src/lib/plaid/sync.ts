@@ -5,6 +5,11 @@ import { plaidItems } from "@/lib/db/schema/plaid";
 import { financialAccounts } from "@/lib/db/schema/accounts";
 import { transactions } from "@/lib/db/schema/transactions";
 import { decrypt } from "@/lib/utils/encryption";
+import {
+  computeNameSignature,
+  normalizeMerchant,
+} from "@/lib/utils/spending-match";
+import { applySpendingClassifications } from "@/lib/spending/classify";
 import { plaidClient } from "./client";
 import type { SyncResult } from "./types";
 
@@ -145,6 +150,22 @@ export async function syncTransactions(
     .set({ cursor, updatedAt: new Date() })
     .where(eq(plaidItems.id, plaidItemId));
 
+  const touchedPlaidIds = [...allAdded, ...allModified]
+    .map((t) => t.transaction_id)
+    .filter((id): id is string => Boolean(id));
+  if (touchedPlaidIds.length > 0) {
+    const touchedRows = await db
+      .select({ id: transactions.id })
+      .from(transactions)
+      .where(inArray(transactions.plaidTransactionId, touchedPlaidIds));
+    if (touchedRows.length > 0) {
+      await applySpendingClassifications(
+        item.userId,
+        touchedRows.map((r) => r.id),
+      );
+    }
+  }
+
   return {
     added: allAdded.length,
     modified: allModified.length,
@@ -183,6 +204,8 @@ async function upsertTransactions(
           category: sql`excluded.category`,
           categoryId: sql`excluded.category_id`,
           pending: sql`excluded.pending`,
+          normalizedMerchant: sql`excluded.normalized_merchant`,
+          nameSignature: sql`excluded.name_signature`,
         },
       });
   }
@@ -201,6 +224,7 @@ function mapPlaidTransaction(
     return null;
   }
 
+  const matchSource = txn.merchant_name ?? txn.name ?? null;
   return {
     userId,
     accountId: dbAccount.id,
@@ -212,6 +236,8 @@ function mapPlaidTransaction(
     category: txn.personal_finance_category?.primary ?? null,
     categoryId: txn.personal_finance_category?.detailed ?? null,
     pending: txn.pending,
+    normalizedMerchant: normalizeMerchant(matchSource),
+    nameSignature: computeNameSignature(matchSource),
   };
 }
 

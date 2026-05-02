@@ -4,7 +4,13 @@ import { z } from "zod";
 import { getServerSession } from "@/lib/auth/get-session";
 import { getTransactionsByDateRange } from "@/lib/db/queries/transactions";
 import { formatCategory } from "@/lib/utils/format";
-import { aggregateIncomeAndExpenses } from "@/lib/utils/aggregations";
+import {
+  aggregateBySpendingType,
+  aggregateIncomeAndExpenses,
+  spendingTypePercentagesOfIncome,
+  type SpendingTypeTotals,
+  type SpendingTypePercentages,
+} from "@/lib/utils/aggregations";
 import { getDateRange, getPreviousDateRange } from "@/lib/utils/date-ranges";
 
 const rangeSchema = z.enum(["week", "month", "year", "ytd"]);
@@ -37,6 +43,8 @@ export interface DashboardRangeData {
     date: string;
     category: string | null;
   }>;
+  spendingTypeTotals: SpendingTypeTotals;
+  spendingTypePercentages: SpendingTypePercentages;
 }
 
 export async function getDashboardDataByRange(
@@ -113,6 +121,10 @@ export async function getDashboardDataByRange(
     category: txn.category,
   }));
 
+  const spendingTypeTotals = aggregateBySpendingType(transactions);
+  const spendingTypePercentages =
+    spendingTypePercentagesOfIncome(spendingTypeTotals);
+
   return {
     success: true,
     data: {
@@ -124,6 +136,8 @@ export async function getDashboardDataByRange(
       spendingByCategory,
       spendingOverTime,
       recentTransactions,
+      spendingTypeTotals,
+      spendingTypePercentages,
     },
   };
 }

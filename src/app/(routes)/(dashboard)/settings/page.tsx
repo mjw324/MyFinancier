@@ -8,6 +8,8 @@ import { UnlinkAccountDialog } from "@/components/features/settings/unlink-accou
 import { SyncAccountButton } from "@/components/features/settings/sync-account-button";
 import { TwoFactorCard } from "@/components/features/settings/two-factor-card";
 import { ResetCustomizationsDialog } from "@/components/features/settings/reset-customizations-dialog";
+import { SpendingRulesSection } from "@/components/features/settings/spending-rules-section";
+import { listSpendingRules } from "@/lib/db/queries/spending-rules";
 import { formatRelativeDate } from "@/lib/utils/format";
 
 export const metadata: Metadata = {
@@ -23,7 +25,10 @@ const STATUS_LABELS: Record<string, { label: string; variant: "default" | "secon
 export default async function SettingsPage() {
   const session = await getServerSession();
   const user = session!.user;
-  const plaidItems = await getPlaidItemsByUserId(user.id);
+  const [plaidItems, spendingRules] = await Promise.all([
+    getPlaidItemsByUserId(user.id),
+    listSpendingRules(user.id),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -128,6 +133,15 @@ export default async function SettingsPage() {
               })}
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Spending Rules</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <SpendingRulesSection rules={spendingRules} />
         </CardContent>
       </Card>
 

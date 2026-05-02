@@ -5,4 +5,5 @@ export * from "./recurring";
 export * from "./transactions";
 export * from "./categories";
 export * from "./budgets";
+export * from "./spending-rules";
 export * from "./relations";

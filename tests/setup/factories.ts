@@ -136,5 +136,10 @@ type TxnRow = {
   category: string | null;
   categoryId: string | null;
   pending: boolean;
+  recurringStreamId?: string | null;
+  spendingType?: string | null;
+  spendingTypeSource?: string | null;
+  normalizedMerchant?: string | null;
+  nameSignature?: string | null;
   createdAt: Date;
 };
