@@ -29,6 +29,7 @@ interface UpcomingBill {
 
 interface SafeToSpendData {
   current_balance: number;
+  projected_balance: number;
   predicted_inflows: number;
   predicted_outflows: number;
   safe_to_spend: number;
@@ -128,7 +129,15 @@ export function SafeToSpend() {
             </p>
 
             <div className="mt-4 grid grid-cols-3 gap-2 text-xs">
-              <Stat label="Balance" value={data.current_balance} />
+              <Stat
+                label="Balance"
+                value={data.projected_balance}
+                sublabel={
+                  Math.abs(data.projected_balance - data.current_balance) > 0.005
+                    ? `${formatCurrency(data.current_balance)} settled`
+                    : undefined
+                }
+              />
               <Stat
                 label="Inflows"
                 value={data.predicted_inflows}
@@ -214,11 +223,13 @@ function Stat({
   value,
   positive,
   negative,
+  sublabel,
 }: {
   label: string;
   value: number;
   positive?: boolean;
   negative?: boolean;
+  sublabel?: string;
 }) {
   return (
     <div className="rounded-md border p-2">
@@ -232,6 +243,9 @@ function Stat({
       >
         {formatCurrency(value)}
       </p>
+      {sublabel && (
+        <p className="text-[10px] text-muted-foreground mt-0.5">{sublabel}</p>
+      )}
     </div>
   );
 }

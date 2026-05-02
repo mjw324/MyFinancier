@@ -1,6 +1,6 @@
 import { type Metadata } from "next";
 import { getServerSession } from "@/lib/auth/get-session";
-import { getAccountsByUserId } from "@/lib/db/queries/accounts";
+import { getAccountsWithBalances } from "@/lib/db/queries/accounts";
 import { AccountCard } from "@/components/features/accounts/account-card";
 import { PlaidLinkButton } from "@/components/features/accounts/plaid-link-button";
 import { Landmark } from "lucide-react";
@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 
 export default async function AccountsPage() {
   const session = await getServerSession();
-  const accounts = await getAccountsByUserId(session!.user.id);
+  const accounts = await getAccountsWithBalances(session!.user.id);
 
   return (
     <div className="space-y-6">

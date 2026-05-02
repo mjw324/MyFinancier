@@ -11,8 +11,11 @@ import {
 
 interface StatCardsProps {
   netWorth: number;
+  projectedNetWorth?: number;
   incomeThisMonth: number;
   expensesThisMonth: number;
+  pendingIncomeThisMonth?: number;
+  pendingExpensesThisMonth?: number;
   netWorthDelta: number;
   previousIncome: number;
   previousExpenses: number;
@@ -49,6 +52,7 @@ interface StatConfig {
   title: string;
   value: string;
   description?: string;
+  pendingNote?: string;
   trend?: { delta: number; label: string; invertColor?: boolean } | null;
   icon: LucideIcon;
   gradient: string;
@@ -56,8 +60,11 @@ interface StatConfig {
 
 export function StatCards({
   netWorth,
+  projectedNetWorth,
   incomeThisMonth,
   expensesThisMonth,
+  pendingIncomeThisMonth = 0,
+  pendingExpensesThisMonth = 0,
   netWorthDelta,
   previousIncome,
   previousExpenses,
@@ -92,10 +99,18 @@ export function StatCards({
     savingsDescription = "Breaking even";
   }
 
+  const projectedDiff =
+    projectedNetWorth !== undefined ? projectedNetWorth - netWorth : 0;
+  const showProjectedNetWorth =
+    projectedNetWorth !== undefined && Math.abs(projectedDiff) > 0.005;
+
   const stats: StatConfig[] = [
     {
       title: "Net Worth",
       value: formatCurrency(netWorth),
+      description: showProjectedNetWorth
+        ? `${formatCompactCurrency(projectedNetWorth!)} projected`
+        : undefined,
       icon: DollarSign,
       gradient: "from-blue-600 to-indigo-700",
       trend: netWorthDelta !== 0
@@ -109,6 +124,10 @@ export function StatCards({
       title: "Income",
       value: formatCurrency(incomeThisMonth),
       description: rangeLabel ?? "This month",
+      pendingNote:
+        pendingIncomeThisMonth > 0
+          ? `${formatCompactCurrency(pendingIncomeThisMonth)} pending`
+          : undefined,
       icon: TrendingUp,
       gradient: "from-emerald-500 to-green-700",
       trend: incomePctChange !== null
@@ -126,6 +145,10 @@ export function StatCards({
       description: expenseRatio !== null
         ? `${expenseRatio}% of income`
         : rangeLabel ?? "This month",
+      pendingNote:
+        pendingExpensesThisMonth > 0
+          ? `${formatCompactCurrency(pendingExpensesThisMonth)} pending`
+          : undefined,
       icon: TrendingDown,
       gradient: "from-rose-500 to-red-700",
       trend: expensesPctChange !== null
@@ -167,6 +190,9 @@ export function StatCards({
               <p className="text-xs text-white/70">
                 {stat.description}
               </p>
+            )}
+            {stat.pendingNote && (
+              <p className="text-xs text-white/60">{stat.pendingNote}</p>
             )}
             {stat.trend && (
               <TrendIndicator

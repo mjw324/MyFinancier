@@ -2,29 +2,24 @@ import { and, between, eq, gt, lt, sql } from "drizzle-orm";
 import { db } from "..";
 import { financialAccounts, transactions, budgets, categories } from "../schema";
 import { getPeriodStart, getPeriodEnd } from "@/lib/utils/budget-periods";
+import { getAccountsWithBalances } from "./accounts";
 
 export async function getOverviewStats(userId: string) {
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
   const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
 
-  const [accountStats] = await db
-    .select({
-      netWorth: sql<string>`coalesce(sum(
-        case
-          when ${financialAccounts.type} in ('credit', 'loan')
-            then -1 * ${financialAccounts.currentBalance}::numeric
-          else ${financialAccounts.currentBalance}::numeric
-        end
-      ), 0)`,
-      accountCount: sql<number>`count(*)`,
-    })
-    .from(financialAccounts)
-    .where(eq(financialAccounts.userId, userId));
+  const accounts = await getAccountsWithBalances(userId);
+  const netWorth = accounts.reduce((sum, a) => sum + a.netWorthSettled, 0);
+  const projectedNetWorth = accounts.reduce(
+    (sum, a) => sum + a.netWorthProjected,
+    0,
+  );
 
   const [expenseStats] = await db
     .select({
       total: sql<string>`coalesce(sum(${transactions.amount}::numeric), 0)`,
+      pending: sql<string>`coalesce(sum(case when ${transactions.pending} then ${transactions.amount}::numeric else 0 end), 0)`,
     })
     .from(transactions)
     .where(
@@ -38,6 +33,7 @@ export async function getOverviewStats(userId: string) {
   const [incomeStats] = await db
     .select({
       total: sql<string>`coalesce(abs(sum(${transactions.amount}::numeric)), 0)`,
+      pending: sql<string>`coalesce(abs(sum(case when ${transactions.pending} then ${transactions.amount}::numeric else 0 end)), 0)`,
     })
     .from(transactions)
     .where(
@@ -49,10 +45,13 @@ export async function getOverviewStats(userId: string) {
     );
 
   return {
-    netWorth: parseFloat(accountStats?.netWorth ?? "0"),
-    accountCount: Number(accountStats?.accountCount ?? 0),
+    netWorth,
+    projectedNetWorth,
+    accountCount: accounts.length,
     expensesThisMonth: parseFloat(expenseStats?.total ?? "0"),
+    pendingExpensesThisMonth: parseFloat(expenseStats?.pending ?? "0"),
     incomeThisMonth: parseFloat(incomeStats?.total ?? "0"),
+    pendingIncomeThisMonth: parseFloat(incomeStats?.pending ?? "0"),
   };
 }
 

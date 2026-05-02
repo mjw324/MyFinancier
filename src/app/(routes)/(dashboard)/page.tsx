@@ -27,6 +27,9 @@ export default async function OverviewPage() {
   return (
     <DashboardContent
       netWorth={stats.netWorth}
+      projectedNetWorth={stats.projectedNetWorth}
+      pendingIncomeThisMonth={stats.pendingIncomeThisMonth}
+      pendingExpensesThisMonth={stats.pendingExpensesThisMonth}
       initialRangeData={dashboardResult.success ? dashboardResult.data : null}
     >
       <BudgetOverview budgets={budgetProgress} />

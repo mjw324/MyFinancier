@@ -83,7 +83,10 @@ export function TransactionsTable({
               return (
                 <TableRow
                   key={txn.id}
-                  className="cursor-pointer"
+                  className={cn(
+                    "cursor-pointer",
+                    txn.pending && "text-muted-foreground italic",
+                  )}
                   onClick={() => setEditing(txn)}
                 >
                   <TableCell className="whitespace-nowrap text-sm">

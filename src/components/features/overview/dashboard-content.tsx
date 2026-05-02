@@ -24,12 +24,18 @@ const RANGE_LABELS: Record<string, string> = {
 
 interface DashboardContentProps {
   netWorth: number;
+  projectedNetWorth: number;
+  pendingIncomeThisMonth: number;
+  pendingExpensesThisMonth: number;
   initialRangeData: DashboardRangeData | null;
   children: React.ReactNode;
 }
 
 export function DashboardContent({
   netWorth,
+  projectedNetWorth,
+  pendingIncomeThisMonth,
+  pendingExpensesThisMonth,
   initialRangeData,
   children,
 }: DashboardContentProps) {
@@ -61,8 +67,11 @@ export function DashboardContent({
       <div className={isPending ? "opacity-50 transition-opacity" : ""}>
         <StatCards
           netWorth={netWorth}
+          projectedNetWorth={projectedNetWorth}
           incomeThisMonth={rangeData?.income ?? 0}
           expensesThisMonth={rangeData?.expenses ?? 0}
+          pendingIncomeThisMonth={pendingIncomeThisMonth}
+          pendingExpensesThisMonth={pendingExpensesThisMonth}
           netWorthDelta={rangeData?.netWorthDelta ?? 0}
           previousIncome={rangeData?.previousIncome ?? 0}
           previousExpenses={rangeData?.previousExpenses ?? 0}

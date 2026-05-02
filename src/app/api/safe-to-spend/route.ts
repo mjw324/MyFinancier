@@ -1,9 +1,7 @@
 import { NextResponse } from "next/server";
-import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
-import { db } from "@/lib/db";
-import { financialAccounts } from "@/lib/db/schema/accounts";
 import { getServerSession } from "@/lib/auth/get-session";
+import { getAccountsWithBalances } from "@/lib/db/queries/accounts";
 import {
   getRecentTransactionDatesByStream,
   listRecurringStreams,
@@ -72,35 +70,27 @@ export async function GET(request: Request) {
   let predictedInflows = 0;
   let predictedOutflows = 0;
   for (const e of events) {
-    if (e.flowType === "inflow") predictedInflows += e.amount;
-    else predictedOutflows += e.amount;
+    if (e.flowType === "inflow") predictedInflows += Math.abs(e.amount);
+    else predictedOutflows += Math.abs(e.amount);
   }
 
-  const balanceRow = await db
-    .select({
-      total: sql<string>`COALESCE(SUM(
-        CASE
-          WHEN ${financialAccounts.type} IN ('credit', 'loan')
-            THEN -1 * COALESCE(${financialAccounts.currentBalance}, 0)::numeric
-          WHEN ${financialAccounts.type} = 'depository'
-            THEN COALESCE(${financialAccounts.availableBalance}, ${financialAccounts.currentBalance}, 0)::numeric
-          ELSE 0
-        END
-      ), 0)`,
-    })
-    .from(financialAccounts)
-    .where(eq(financialAccounts.userId, userId));
-  const currentBalance = Number(balanceRow[0]?.total ?? 0);
+  const accounts = await getAccountsWithBalances(userId);
+  const settledBalance = accounts.reduce((s, a) => s + a.netWorthSettled, 0);
+  const projectedBalance = accounts.reduce(
+    (s, a) => s + a.netWorthProjected,
+    0,
+  );
 
   const safeToSpend =
-    currentBalance + predictedInflows - predictedOutflows;
+    projectedBalance + predictedInflows - predictedOutflows;
 
   events.sort((a, b) => a.date.getTime() - b.date.getTime());
 
   return NextResponse.json({
     success: true,
     data: {
-      current_balance: currentBalance,
+      current_balance: settledBalance,
+      projected_balance: projectedBalance,
       predicted_inflows: predictedInflows,
       predicted_outflows: predictedOutflows,
       safe_to_spend: safeToSpend,
