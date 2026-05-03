@@ -178,7 +178,7 @@ function StatRow({
         justifyContent: "space-between",
       }}
     >
-      <div>
+      <div style={{ textAlign: "left" }}>
         <div
           style={{
             fontSize: 10,
@@ -268,7 +268,7 @@ function TxRow({
         borderBottom: "1px solid #f4f4f7",
       }}
     >
-      <div>
+      <div style={{ textAlign: "left" }}>
         <div style={{ fontSize: 13, fontWeight: 500, color: "#0a0a0c" }}>
           {merchant}
         </div>
