@@ -13,6 +13,7 @@ import { and, eq } from "drizzle-orm";
 import { syncTransactions } from "@/lib/plaid/sync";
 import { fetchRecurringTransactions } from "@/lib/plaid/recurring";
 import { PLAID_ERROR_MESSAGES } from "@/lib/plaid/types";
+import { upsertUserPreferences } from "@/lib/db/queries/user-preferences";
 
 export async function unlinkPlaidItemAction(plaidItemId: string) {
   const session = await getServerSession();
@@ -123,6 +124,19 @@ export async function resetTransactionCustomizationsAction() {
   revalidatePath("/transactions");
   revalidatePath("/settings");
   revalidatePath("/");
+  return { success: true as const };
+}
+
+export async function updateHideTransfersAction(hide: boolean) {
+  const session = await getServerSession();
+  if (!session?.user) return { success: false as const, error: "Unauthorized" };
+
+  await upsertUserPreferences(session.user.id, {
+    hideTransfersFromList: hide,
+  });
+
+  revalidatePath("/transactions");
+  revalidatePath("/settings");
   return { success: true as const };
 }
 

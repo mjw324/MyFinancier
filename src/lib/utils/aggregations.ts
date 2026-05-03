@@ -9,11 +9,12 @@ export interface PeriodTotals {
 }
 
 export function aggregateIncomeAndExpenses(
-  txns: ReadonlyArray<{ amount: string }>,
+  txns: ReadonlyArray<{ amount: string; isTransfer?: boolean | null }>,
 ): PeriodTotals {
   let income = 0;
   let expenses = 0;
   for (const t of txns) {
+    if (t.isTransfer) continue;
     const amount = parseFloat(t.amount);
     if (amount > 0) {
       expenses += amount;
@@ -48,13 +49,18 @@ export interface SpendingTypeTotals {
 }
 
 export function aggregateBySpendingType(
-  txns: ReadonlyArray<{ amount: string; spendingType?: string | null }>,
+  txns: ReadonlyArray<{
+    amount: string;
+    spendingType?: string | null;
+    isTransfer?: boolean | null;
+  }>,
 ): SpendingTypeTotals {
   let necessary = 0;
   let discretionary = 0;
   let unclassified = 0;
   let income = 0;
   for (const t of txns) {
+    if (t.isTransfer) continue;
     const amount = parseFloat(t.amount);
     if (amount < 0) {
       income += Math.abs(amount);

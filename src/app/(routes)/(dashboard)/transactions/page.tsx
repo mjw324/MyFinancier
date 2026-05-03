@@ -9,6 +9,7 @@ import {
   type TransactionFilters,
 } from "@/lib/db/queries/transactions";
 import { getAccountsByUserId } from "@/lib/db/queries/accounts";
+import { getUserPreferences } from "@/lib/db/queries/user-preferences";
 import { TransactionFilters as TransactionFiltersUI } from "@/components/features/transactions/transaction-filters";
 import { TransactionsTable } from "@/components/features/transactions/transactions-table";
 import { TransactionTotals } from "@/components/features/transactions/transaction-totals";
@@ -41,6 +42,8 @@ export default async function TransactionsPage({
       ? params.spendingType
       : undefined;
 
+  const prefs = await getUserPreferences(userId);
+
   const filters: TransactionFilters = {
     search: params.search || undefined,
     accountId: params.account || undefined,
@@ -49,6 +52,7 @@ export default async function TransactionsPage({
     endDate: params.to ? new Date(params.to) : undefined,
     recurring: recurringParam,
     spendingType: spendingTypeParam,
+    includeTransfers: !prefs.hideTransfersFromList,
   };
 
   const currentPage = Math.max(1, parseInt(params.page ?? "1", 10) || 1);

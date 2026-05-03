@@ -25,6 +25,7 @@ export async function getOverviewStats(userId: string) {
     .where(
       and(
         eq(transactions.userId, userId),
+        eq(transactions.isTransfer, false),
         between(transactions.date, startOfMonth, endOfMonth),
         gt(transactions.amount, "0"),
       ),
@@ -39,6 +40,7 @@ export async function getOverviewStats(userId: string) {
     .where(
       and(
         eq(transactions.userId, userId),
+        eq(transactions.isTransfer, false),
         between(transactions.date, startOfMonth, endOfMonth),
         lt(transactions.amount, "0"),
       ),
@@ -69,6 +71,7 @@ export async function getSpendingByCategory(
     .where(
       and(
         eq(transactions.userId, userId),
+        eq(transactions.isTransfer, false),
         between(transactions.date, startDate, endDate),
         gt(transactions.amount, "0"),
       ),
@@ -102,6 +105,7 @@ export async function getBudgetProgress(userId: string) {
         .where(
           and(
             eq(transactions.userId, userId),
+            eq(transactions.isTransfer, false),
             eq(transactions.category, budget.category?.name ?? ""),
             between(transactions.date, periodStart, periodEnd),
             gt(transactions.amount, "0"),

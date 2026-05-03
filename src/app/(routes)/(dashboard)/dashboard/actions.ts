@@ -76,6 +76,7 @@ export async function getDashboardDataByRange(
   const dailyDates = new Map<string, Date>();
 
   for (const txn of transactions) {
+    if (txn.isTransfer) continue;
     const amount = parseFloat(txn.amount);
     if (amount > 0) {
       const cat = txn.category ?? "UNCATEGORIZED";

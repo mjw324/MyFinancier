@@ -72,10 +72,15 @@ export interface TransactionFilters {
   endDate?: Date;
   recurring?: "all" | "recurring" | "onetime";
   spendingType?: "necessary" | "discretionary" | "unclassified";
+  includeTransfers?: boolean;
 }
 
 function buildFilterConditions(userId: string, filters: TransactionFilters) {
   const conditions = [eq(transactions.userId, userId)];
+
+  if (filters.includeTransfers === false) {
+    conditions.push(eq(transactions.isTransfer, false));
+  }
 
   if (filters.accountId) {
     conditions.push(eq(transactions.accountId, filters.accountId));
@@ -181,7 +186,12 @@ export async function getTransactionTotals(
       incomeNeg: sql<string>`COALESCE(SUM(CASE WHEN ${transactions.amount} < 0 THEN ${transactions.amount} ELSE 0 END), 0)`,
     })
     .from(transactions)
-    .where(buildFilterConditions(userId, filters));
+    .where(
+      and(
+        buildFilterConditions(userId, filters),
+        eq(transactions.isTransfer, false),
+      ),
+    );
 
   const expenses = parseFloat(result?.expenses ?? "0");
   const income = -parseFloat(result?.incomeNeg ?? "0");

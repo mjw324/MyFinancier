@@ -6,4 +6,5 @@ export * from "./transactions";
 export * from "./categories";
 export * from "./budgets";
 export * from "./spending-rules";
+export * from "./user-preferences";
 export * from "./relations";

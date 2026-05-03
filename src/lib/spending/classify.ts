@@ -427,6 +427,7 @@ export async function applySpendingClassifications(
   await db.transaction(async (tx) => {
     const baseConds = [
       eq(transactions.userId, userId),
+      eq(transactions.isTransfer, false),
       or(
         isNull(transactions.spendingTypeSource),
         and(

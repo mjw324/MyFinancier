@@ -32,6 +32,7 @@ interface Transaction {
   spendingTypeSource: string | null;
   normalizedMerchant: string | null;
   nameSignature: string | null;
+  isTransfer: boolean | null;
   financialAccount: {
     name: string;
   } | null;
@@ -102,6 +103,11 @@ export function TransactionsTable({
                         {txn.recurringStreamId && (
                           <RecurringBadge streamId={txn.recurringStreamId} />
                         )}
+                        {txn.isTransfer && (
+                          <Badge variant="secondary" className="text-xs">
+                            Transfer
+                          </Badge>
+                        )}
                       </p>
                       {txn.pending && (
                         <span className="text-xs text-muted-foreground">
@@ -126,7 +132,7 @@ export function TransactionsTable({
                     )}
                   </TableCell>
                   <TableCell onClick={(e) => e.stopPropagation()}>
-                    {isExpense ? (
+                    {isExpense && !txn.isTransfer ? (
                       <ClassifyPopover
                         transactionId={txn.id}
                         spendingType={txn.spendingType}

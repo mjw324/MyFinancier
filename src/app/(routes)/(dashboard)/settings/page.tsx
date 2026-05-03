@@ -9,7 +9,9 @@ import { SyncAccountButton } from "@/components/features/settings/sync-account-b
 import { TwoFactorCard } from "@/components/features/settings/two-factor-card";
 import { ResetCustomizationsDialog } from "@/components/features/settings/reset-customizations-dialog";
 import { SpendingRulesSection } from "@/components/features/settings/spending-rules-section";
+import { DisplayPreferencesCard } from "@/components/features/settings/display-preferences-card";
 import { listSpendingRules } from "@/lib/db/queries/spending-rules";
+import { getUserPreferences } from "@/lib/db/queries/user-preferences";
 import { formatRelativeDate } from "@/lib/utils/format";
 
 export const metadata: Metadata = {
@@ -25,9 +27,10 @@ const STATUS_LABELS: Record<string, { label: string; variant: "default" | "secon
 export default async function SettingsPage() {
   const session = await getServerSession();
   const user = session!.user;
-  const [plaidItems, spendingRules] = await Promise.all([
+  const [plaidItems, spendingRules, prefs] = await Promise.all([
     getPlaidItemsByUserId(user.id),
     listSpendingRules(user.id),
+    getUserPreferences(user.id),
   ]);
 
   return (
@@ -144,6 +147,10 @@ export default async function SettingsPage() {
           <SpendingRulesSection rules={spendingRules} />
         </CardContent>
       </Card>
+
+      <DisplayPreferencesCard
+        hideTransfersFromList={prefs.hideTransfersFromList}
+      />
 
       <Card>
         <CardHeader>

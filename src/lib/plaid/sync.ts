@@ -10,6 +10,7 @@ import {
   normalizeMerchant,
 } from "@/lib/utils/spending-match";
 import { applySpendingClassifications } from "@/lib/spending/classify";
+import { detectAndFlagTransfers } from "./transfers";
 import { plaidClient } from "./client";
 import type { SyncResult } from "./types";
 
@@ -159,6 +160,7 @@ export async function syncTransactions(
       .from(transactions)
       .where(inArray(transactions.plaidTransactionId, touchedPlaidIds));
     if (touchedRows.length > 0) {
+      await detectAndFlagTransfers(item.userId);
       await applySpendingClassifications(
         item.userId,
         touchedRows.map((r) => r.id),

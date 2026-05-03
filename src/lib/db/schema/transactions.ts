@@ -42,6 +42,8 @@ export const transactions = pgTable(
     spendingTypeSource: text("spending_type_source"),
     normalizedMerchant: text("normalized_merchant"),
     nameSignature: text("name_signature"),
+    isTransfer: boolean("is_transfer").notNull().default(false),
+    transferPairId: text("transfer_pair_id"),
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow(),
   },
   (table) => [
@@ -54,6 +56,11 @@ export const transactions = pgTable(
       table.userId,
       table.spendingType,
     ),
+    index("transactions_user_is_transfer_idx").on(
+      table.userId,
+      table.isTransfer,
+    ),
+    index("transactions_transfer_pair_id_idx").on(table.transferPairId),
     check(
       "transactions_spending_type_check",
       sql`${table.spendingType} IS NULL OR ${table.spendingType} IN ('necessary','discretionary')`,
