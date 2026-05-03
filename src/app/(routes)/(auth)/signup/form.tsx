@@ -5,7 +5,6 @@ import {
   FormControl,
   FormField,
   FormItem,
-  FormLabel,
   FormMessage,
 } from "@/components/ui/form";
 import { useTransition } from "react";
@@ -20,7 +19,10 @@ import { SignUpSchema, SignUpValues } from "./validate";
 import InputStartIcon from "../components/input-start-icon";
 import InputPasswordContainer from "../components/input-password";
 import { cn } from "@/lib/utils";
-import { AtSign, MailIcon, UserIcon } from "lucide-react";
+import { AtSign, Lock, MailIcon, UserIcon } from "lucide-react";
+
+const fieldClass =
+  "h-11 rounded-[10px] border-[#e4e4e7] bg-white text-sm text-[#0a0a0c] placeholder:text-[#9494a0] shadow-none";
 
 export default function SignUpForm() {
   const [isPending, startTransition] = useTransition();
@@ -37,7 +39,6 @@ export default function SignUpForm() {
 
   function onSubmit(data: SignUpValues) {
     startTransition(async () => {
-      console.log("submit data:", data);
       const response = await signUp.email(data);
 
       if (response.error) {
@@ -51,6 +52,7 @@ export default function SignUpForm() {
 
   const getInputClassName = (fieldName: keyof SignUpValues) =>
     cn(
+      fieldClass,
       form.formState.errors[fieldName] &&
         "border-destructive/80 text-destructive focus-visible:border-destructive/80 focus-visible:ring-destructive/20",
     );
@@ -59,7 +61,7 @@ export default function SignUpForm() {
     <Form {...form}>
       <form
         onSubmit={form.handleSubmit(onSubmit)}
-        className="z-50 my-8 flex w-full flex-col gap-5"
+        className="z-50 mt-6 flex w-full flex-col gap-3"
       >
         <FormField
           control={form.control}
@@ -126,9 +128,12 @@ export default function SignUpForm() {
           render={({ field }) => (
             <FormItem>
               <FormControl>
-                <InputPasswordContainer>
+                <InputPasswordContainer startIcon={Lock}>
                   <Input
-                    className={cn("pe-9", getInputClassName("password"))}
+                    className={cn(
+                      "peer ps-9 pe-9",
+                      getInputClassName("password"),
+                    )}
                     placeholder="Password"
                     disabled={isPending}
                     {...field}
@@ -146,10 +151,13 @@ export default function SignUpForm() {
           render={({ field }) => (
             <FormItem>
               <FormControl>
-                <InputPasswordContainer>
+                <InputPasswordContainer startIcon={Lock}>
                   <Input
-                    className={cn("pe-9", getInputClassName("confirmPassword"))}
-                    placeholder="Confirm Password"
+                    className={cn(
+                      "peer ps-9 pe-9",
+                      getInputClassName("confirmPassword"),
+                    )}
+                    placeholder="Confirm password"
                     disabled={isPending}
                     {...field}
                   />
@@ -160,9 +168,35 @@ export default function SignUpForm() {
           )}
         />
 
-        <Button type="submit" disabled={isPending} className="mt-5 w-full">
-          Sign Up
+        <label className="mt-1.5 flex items-start gap-2.5 text-xs leading-relaxed text-[#3a3a40]">
+          <input
+            type="checkbox"
+            defaultChecked
+            style={{ accentColor: "#0a0a0c" }}
+            className="mt-0.5 size-3.5"
+          />
+          <span>
+            I agree to the{" "}
+            <a className="font-medium text-[#0a0a0c] underline">Terms</a> and{" "}
+            <a className="font-medium text-[#0a0a0c] underline">
+              Privacy Policy
+            </a>
+            .
+          </span>
+        </label>
+
+        <Button
+          type="submit"
+          disabled={isPending}
+          className="mt-2 h-11 w-full rounded-[10px] bg-[#0a0a0c] text-sm font-medium text-white shadow-[0_8px_20px_-10px_rgba(10,10,12,0.45)] hover:bg-[#0a0a0c]/90"
+        >
+          Create account
         </Button>
+
+        <div className="mt-2 text-center text-[11px] leading-relaxed text-[#9494a0]">
+          We&apos;ll send you a verification email. Bank connections are secured
+          by Plaid — we never see or store your credentials.
+        </div>
       </form>
     </Form>
   );
