@@ -1,3 +1,6 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
 import { WalletGlyph } from "./wallet-glyph";
 
 const fontInter = "var(--font-inter), Inter, sans-serif";
@@ -242,7 +245,13 @@ function SpendingByCategory({ scale }: { scale: number }) {
   );
 }
 
-function SafeToSpend({ scale }: { scale: number }) {
+function SafeToSpend({
+  scale,
+  displayValue = "$1,247.50",
+}: {
+  scale: number;
+  displayValue?: string;
+}) {
   return (
     <div
       style={{
@@ -285,7 +294,7 @@ function SafeToSpend({ scale }: { scale: number }) {
           letterSpacing: "-0.02em",
         }}
       >
-        $1,247.50
+        {displayValue}
       </div>
       <div style={{ fontSize: 9 * scale, color: "#71717a", marginTop: 2 * scale }}>
         after $2,477.97 in upcoming bills
@@ -324,8 +333,142 @@ function SafeToSpend({ scale }: { scale: number }) {
   );
 }
 
+type TrafficTone = "red" | "yellow" | "green";
+
+const TRAFFIC_BASE: Record<TrafficTone, string> = {
+  red: "#ff5f56",
+  yellow: "#ffbd2e",
+  green: "#27c93f",
+};
+
+const TRAFFIC_HOVER: Record<TrafficTone, string> = {
+  red: "#e0443b",
+  yellow: "#e0a017",
+  green: "#1fa832",
+};
+
+function TrafficButton({
+  tone,
+  size,
+  onClick,
+  buttonRef,
+}: {
+  tone: TrafficTone;
+  size: number;
+  onClick?: () => void;
+  buttonRef?: React.Ref<HTMLButtonElement>;
+}) {
+  const [hover, setHover] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  return (
+    <button
+      ref={buttonRef}
+      type="button"
+      aria-label={`${tone} window control`}
+      onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => {
+        setHover(false);
+        setPressed(false);
+      }}
+      onMouseDown={() => setPressed(true)}
+      onMouseUp={() => setPressed(false)}
+      style={{
+        width: size,
+        height: size,
+        borderRadius: "50%",
+        background: hover ? TRAFFIC_HOVER[tone] : TRAFFIC_BASE[tone],
+        border: "none",
+        padding: 0,
+        cursor: "pointer",
+        transform: pressed ? "scale(0.88)" : hover ? "scale(1.08)" : "scale(1)",
+        transition: "transform 120ms ease, background 120ms ease",
+        boxShadow: hover ? "0 0 0 1px rgba(0,0,0,0.08)" : "none",
+      }}
+    />
+  );
+}
+
+type Confetto = {
+  id: number;
+  left: number;
+  top: number;
+  dx: number;
+  dy: number;
+  rot: number;
+  color: string;
+  size: number;
+};
+
+const CONFETTI_PALETTES: Record<TrafficTone, string[]> = {
+  red: ["#dc3a4f", "#ff5f56", "#ee5a6f", "#f97316", "#f5c518", "#8b5cf6"],
+  yellow: ["#f5c518", "#ffbd2e", "#e87515", "#fbbf24", "#fde047", "#fb923c"],
+  green: ["#1a9355", "#27c93f", "#2bb070", "#10b981", "#34d399", "#3b6df0"],
+};
+
+function buildConfetti(
+  originX: number,
+  originY: number,
+  tone: TrafficTone,
+): Confetto[] {
+  const palette = CONFETTI_PALETTES[tone];
+  return Array.from({ length: 32 }, (_, i) => {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 80 + Math.random() * 160;
+    return {
+      id: i,
+      left: originX,
+      top: originY,
+      dx: Math.cos(angle) * speed,
+      dy: Math.sin(angle) * speed - 120,
+      rot: Math.random() * 720 - 360,
+      color: palette[i % palette.length],
+      size: 6 + Math.random() * 6,
+    };
+  });
+}
+
+const DEFAULT_SAFE = "$1,247.50";
+const BOOST_SAFE = "$9,999,999.99";
+
 export function BrowserMock({ scale = 1 }: { scale?: number }) {
   const W = 920 * scale;
+  const redRef = useRef<HTMLButtonElement>(null);
+  const yellowRef = useRef<HTMLButtonElement>(null);
+  const greenRef = useRef<HTMLButtonElement>(null);
+  const [confetti, setConfetti] = useState<Confetto[]>([]);
+  const [safeValue, setSafeValue] = useState<string>(DEFAULT_SAFE);
+  const [boosting, setBoosting] = useState(false);
+
+  useEffect(() => {
+    if (confetti.length === 0) return;
+    const t = setTimeout(() => setConfetti([]), 1400);
+    return () => clearTimeout(t);
+  }, [confetti]);
+
+  const triggerEgg = (
+    tone: TrafficTone,
+    ref: React.RefObject<HTMLButtonElement | null>,
+  ) => {
+    if (boosting) return;
+    const rect = ref.current?.getBoundingClientRect();
+    if (rect) {
+      setConfetti(
+        buildConfetti(
+          rect.left + rect.width / 2,
+          rect.top + rect.height / 2,
+          tone,
+        ),
+      );
+    }
+    setBoosting(true);
+    setSafeValue(BOOST_SAFE);
+    setTimeout(() => {
+      setSafeValue(DEFAULT_SAFE);
+      setBoosting(false);
+    }, 1600);
+  };
+
   return (
     <div
       style={{
@@ -348,29 +491,23 @@ export function BrowserMock({ scale = 1 }: { scale?: number }) {
           borderBottom: "1px solid #e4e4e7",
         }}
       >
-        <div
-          style={{
-            width: 11 * scale,
-            height: 11 * scale,
-            borderRadius: "50%",
-            background: "#ff5f56",
-          }}
+        <TrafficButton
+          tone="red"
+          size={11 * scale}
+          onClick={() => triggerEgg("red", redRef)}
+          buttonRef={redRef}
         />
-        <div
-          style={{
-            width: 11 * scale,
-            height: 11 * scale,
-            borderRadius: "50%",
-            background: "#ffbd2e",
-          }}
+        <TrafficButton
+          tone="yellow"
+          size={11 * scale}
+          onClick={() => triggerEgg("yellow", yellowRef)}
+          buttonRef={yellowRef}
         />
-        <div
-          style={{
-            width: 11 * scale,
-            height: 11 * scale,
-            borderRadius: "50%",
-            background: "#27c93f",
-          }}
+        <TrafficButton
+          tone="green"
+          size={11 * scale}
+          onClick={() => triggerEgg("green", greenRef)}
+          buttonRef={greenRef}
         />
         <div style={{ flex: 1, display: "flex", justifyContent: "center" }}>
           <div
@@ -538,10 +675,47 @@ export function BrowserMock({ scale = 1 }: { scale?: number }) {
             <SpendingByCategory scale={scale} />
           </div>
           <div style={{ marginTop: 10 * scale }}>
-            <SafeToSpend scale={scale} />
+            <SafeToSpend scale={scale} displayValue={safeValue} />
           </div>
         </div>
       </div>
+      {confetti.length > 0 && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            pointerEvents: "none",
+            zIndex: 9999,
+          }}
+        >
+          {confetti.map((c) => (
+            <span
+              key={c.id}
+              style={
+                {
+                  position: "absolute",
+                  left: c.left,
+                  top: c.top,
+                  width: c.size,
+                  height: c.size,
+                  background: c.color,
+                  borderRadius: 2,
+                  ["--dx" as string]: `${c.dx}px`,
+                  ["--dy" as string]: `${c.dy}px`,
+                  ["--rot" as string]: `${c.rot}deg`,
+                  animation: "browser-mock-confetti 1.3s ease-out forwards",
+                } as React.CSSProperties
+              }
+            />
+          ))}
+          <style>{`
+            @keyframes browser-mock-confetti {
+              0% { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+              100% { transform: translate(var(--dx), calc(var(--dy) + 320px)) rotate(var(--rot)); opacity: 0; }
+            }
+          `}</style>
+        </div>
+      )}
     </div>
   );
 }

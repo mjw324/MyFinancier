@@ -116,6 +116,7 @@ function Nav() {
 function Hero() {
   return (
     <div
+      id="features"
       style={{
         background:
           "radial-gradient(ellipse 90% 80% at 75% 25%, #f5dcff 0%, #ffe1ec 35%, #ffe8d4 65%, #fff5e8 85%, #fafafa 100%)",
@@ -234,7 +235,6 @@ function Hero() {
         </div>
 
         <div
-          id="features"
           style={{
             marginTop: 80,
             display: "flex",
