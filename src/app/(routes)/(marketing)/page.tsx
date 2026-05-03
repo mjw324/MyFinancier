@@ -33,6 +33,7 @@ export default async function MarketingPage() {
 function Nav() {
   return (
     <nav
+      className="mf-nav"
       style={{
         display: "flex",
         alignItems: "center",
@@ -90,6 +91,7 @@ function Nav() {
       >
         <Link
           href="/signin"
+          className="mf-nav-signin"
           style={{ color: "#3a3a40", textDecoration: "none" }}
         >
           Sign in
@@ -126,6 +128,7 @@ function Hero() {
     >
       <Nav />
       <div
+        className="mf-hero-wrap"
         style={{
           padding: "60px 56px 0",
           maxWidth: 1280,
@@ -181,6 +184,7 @@ function Hero() {
         </div>
 
         <h1
+          className="mf-hero-title"
           style={{
             fontFamily: fontTight,
             fontSize: 92,
@@ -235,6 +239,7 @@ function Hero() {
         </div>
 
         <div
+          className="mf-hero-mock-row"
           style={{
             marginTop: 80,
             display: "flex",
@@ -264,6 +269,7 @@ function PlaidStrip() {
       }}
     >
       <div
+        className="mf-plaid-row"
         style={{
           display: "flex",
           alignItems: "center",
@@ -271,6 +277,7 @@ function PlaidStrip() {
         }}
       >
         <div
+          className="mf-plaid-content"
           style={{
             flexShrink: 0,
             padding: "24px 48px 24px 56px",
@@ -349,6 +356,7 @@ function HowItWorks() {
   return (
     <section
       id="how-it-works"
+      className="mf-steps-wrap"
       style={{
         padding: "140px 56px",
         background: "white",
@@ -371,6 +379,7 @@ function HowItWorks() {
           How it works
         </div>
         <h2
+          className="mf-steps-heading"
           style={{
             fontFamily: fontTight,
             fontSize: 56,
@@ -386,6 +395,7 @@ function HowItWorks() {
           in three steps.
         </h2>
         <div
+          className="mf-steps-grid"
           style={{
             display: "grid",
             gridTemplateColumns: "repeat(3, 1fr)",
@@ -440,6 +450,7 @@ function Footer() {
   return (
     <footer
       id="about"
+      className="mf-footer"
       style={{
         padding: "80px 56px 40px",
         background: "#0a0a0c",
@@ -448,6 +459,7 @@ function Footer() {
       }}
     >
       <div
+        className="mf-footer-top"
         style={{
           display: "flex",
           justifyContent: "space-between",
@@ -494,6 +506,7 @@ function Footer() {
           </p>
         </div>
         <div
+          className="mf-footer-cols"
           style={{
             display: "grid",
             gridTemplateColumns: "repeat(3, 140px)",
@@ -574,6 +587,7 @@ function Footer() {
         </div>
       </div>
       <div
+        className="mf-footer-bottom"
         style={{
           borderTop: "1px solid #1f1f24",
           paddingTop: 24,

@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { PhoneMock } from "./phone-mock";
 import { WalletGlyph } from "./wallet-glyph";
 
 const fontInter = "var(--font-inter), Inter, sans-serif";
@@ -432,6 +434,7 @@ const DEFAULT_SAFE = "$1,247.50";
 const BOOST_SAFE = "$9,999,999.99";
 
 export function BrowserMock({ scale = 1 }: { scale?: number }) {
+  const isMobile = useIsMobile();
   const W = 920 * scale;
   const redRef = useRef<HTMLButtonElement>(null);
   const yellowRef = useRef<HTMLButtonElement>(null);
@@ -445,6 +448,8 @@ export function BrowserMock({ scale = 1 }: { scale?: number }) {
     const t = setTimeout(() => setConfetti([]), 1400);
     return () => clearTimeout(t);
   }, [confetti]);
+
+  if (isMobile) return <PhoneMock />;
 
   const triggerEgg = (
     tone: TrafficTone,
