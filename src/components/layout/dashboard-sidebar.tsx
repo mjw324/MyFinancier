@@ -34,7 +34,7 @@ import {
 } from "@/components/ui/sidebar";
 
 const navItems = [
-  { title: "Overview", url: "/", icon: LayoutDashboard },
+  { title: "Overview", url: "/dashboard", icon: LayoutDashboard },
   { title: "Accounts", url: "/accounts", icon: Landmark },
   { title: "Transactions", url: "/transactions", icon: ArrowLeftRight },
   { title: "Budgets", url: "/budgets", icon: PiggyBank },
@@ -58,7 +58,7 @@ export function DashboardSidebar({ user }: DashboardSidebarProps) {
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" asChild>
-              <Link href="/">
+              <Link href="/dashboard">
                 <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
                   <Wallet className="size-4" />
                 </div>
@@ -82,8 +82,8 @@ export function DashboardSidebar({ user }: DashboardSidebarProps) {
                   <SidebarMenuButton
                     asChild
                     isActive={
-                      item.url === "/"
-                        ? pathname === "/"
+                      item.url === "/dashboard"
+                        ? pathname === "/dashboard"
                         : pathname.startsWith(item.url)
                     }
                     tooltip={item.title}
@@ -146,7 +146,7 @@ export function DashboardSidebar({ user }: DashboardSidebarProps) {
                     signOut({
                       fetchOptions: {
                         onSuccess: () => {
-                          window.location.href = "/signin";
+                          window.location.href = "/";
                         },
                       },
                     })

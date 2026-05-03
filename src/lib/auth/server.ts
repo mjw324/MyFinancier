@@ -63,11 +63,6 @@ export const auth = betterAuth({
         required: false,
         input: false,
       },
-      gender: {
-        type: "boolean",
-        required: true,
-        input: true,
-      },
     },
   },
 });

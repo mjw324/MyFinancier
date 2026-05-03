@@ -21,7 +21,6 @@ import InputStartIcon from "../components/input-start-icon";
 import InputPasswordContainer from "../components/input-password";
 import { cn } from "@/lib/utils";
 import { AtSign, MailIcon, UserIcon } from "lucide-react";
-import { GenderRadioGroup } from "../components/gender-radio-group";
 
 export default function SignUpForm() {
   const [isPending, startTransition] = useTransition();
@@ -33,7 +32,6 @@ export default function SignUpForm() {
       username: "",
       password: "",
       confirmPassword: "",
-      gender: false
     },
   });
 
@@ -157,22 +155,6 @@ export default function SignUpForm() {
                   />
                 </InputPasswordContainer>
               </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        {/* Gender */}
-        <FormField
-          control={form.control}
-          name="gender"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Gender</FormLabel>
-              <GenderRadioGroup
-                value={field.value}
-                onChange={field.onChange}
-              />
               <FormMessage />
             </FormItem>
           )}

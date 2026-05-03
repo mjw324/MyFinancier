@@ -43,7 +43,7 @@ export default function SignInForm() {
       } else if (response.data && "twoFactorRedirect" in response.data) {
         // 2FA redirect handled by twoFactorClient's onTwoFactorRedirect
       } else {
-        router.push("/");
+        router.push("/dashboard");
       }
     });
   }

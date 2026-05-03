@@ -9,7 +9,6 @@ export const user = pgTable("user", {
   emailVerified: boolean("emailVerified").notNull(),
   image: text("image"),
   role: text("role").default("member").notNull(),
-  gender: boolean("gender").notNull(),
   twoFactorEnabled: boolean("twoFactorEnabled").default(false),
   createdAt: timestamp("createdAt").defaultNow(),
   updatedAt: timestamp("updatedAt")

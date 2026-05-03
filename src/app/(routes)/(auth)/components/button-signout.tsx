@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { signOut } from "@/lib/auth/client";
-import { redirect } from "next/navigation";
 import { Button } from "@/components/ui/button";
 
 export default function SignOutButton() {
@@ -14,7 +13,7 @@ export default function SignOutButton() {
       fetchOptions: {
         onSuccess: () => {
           setIsPending(false);
-          redirect("/");
+          window.location.href = "/";
         },
       },
     });

@@ -95,7 +95,7 @@ function OtpForm({
       if (error) {
         toast.error(error.message ?? "Invalid verification code");
       } else {
-        router.push("/");
+        router.push("/dashboard");
       }
     });
   }
@@ -203,7 +203,7 @@ function BackupCodeForm({
       if (error) {
         toast.error(error.message ?? "Invalid backup code");
       } else {
-        router.push("/");
+        router.push("/dashboard");
       }
     });
   }

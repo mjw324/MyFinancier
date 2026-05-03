@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import {
   getDashboardDataByRange,
   type DashboardRangeData,
-} from "@/app/(routes)/(dashboard)/actions";
+} from "@/app/(routes)/(dashboard)/dashboard/actions";
 import { SpendingTimeRangeSelect } from "./spending-time-range-select";
 import { StatCards } from "./stat-cards";
 import { RecentTransactions } from "./recent-transactions";
