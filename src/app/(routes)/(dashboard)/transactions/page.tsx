@@ -14,6 +14,7 @@ import { TransactionFilters as TransactionFiltersUI } from "@/components/feature
 import { TransactionsTable } from "@/components/features/transactions/transactions-table";
 import { TransactionTotals } from "@/components/features/transactions/transaction-totals";
 import { Pagination } from "@/components/features/transactions/pagination";
+import { ExportButton } from "@/components/features/transactions/export-button";
 
 export const metadata: Metadata = {
   title: "MyFinancier — Transactions",
@@ -76,11 +77,14 @@ export default async function TransactionsPage({
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-lg font-semibold">Transactions</h2>
-        <p className="text-sm text-muted-foreground">
-          {totalCount} transaction{totalCount !== 1 ? "s" : ""}
-        </p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold">Transactions</h2>
+          <p className="text-sm text-muted-foreground">
+            {totalCount} transaction{totalCount !== 1 ? "s" : ""}
+          </p>
+        </div>
+        <ExportButton count={totalCount} />
       </div>
 
       <TransactionFiltersUI
