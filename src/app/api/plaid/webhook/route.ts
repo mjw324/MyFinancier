@@ -137,6 +137,19 @@ export async function POST(request: Request) {
     const webhookType = body.webhook_type as string;
     const webhookCode = body.webhook_code as string;
 
+    console.log(
+      `[plaid-webhook] ${JSON.stringify({
+        webhook_type: webhookType,
+        webhook_code: webhookCode,
+        item_id: body.item_id ?? null,
+        environment: body.environment ?? null,
+        initial_update_complete: body.initial_update_complete ?? null,
+        historical_update_complete: body.historical_update_complete ?? null,
+        new_transactions: body.new_transactions ?? null,
+        error_code: body.error?.error_code ?? null,
+      })}`,
+    );
+
     if (
       webhookType === "TRANSACTIONS" &&
       webhookCode === "SYNC_UPDATES_AVAILABLE"
@@ -155,7 +168,9 @@ export async function POST(request: Request) {
     ) {
       await handleRecurringTransactionsUpdate(body);
     } else {
-      console.log(`Unhandled webhook: ${webhookType}/${webhookCode}`);
+      console.log(
+        `[plaid-webhook] unhandled ${webhookType}/${webhookCode} item_id=${body.item_id ?? "?"}`,
+      );
     }
 
     return NextResponse.json({ success: true, data: { received: true } });
