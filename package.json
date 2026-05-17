@@ -70,13 +70,5 @@
     "vite-tsconfig-paths": "^6.1.1",
     "vitest": "^4.1.5"
   },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "sharp"
-    ],
-    "ignoredBuiltDependencies": [
-      "esbuild",
-      "unrs-resolver"
-    ]
-  }
+  "packageManager": "pnpm@11.1.2"
 }
