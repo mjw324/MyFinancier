@@ -216,8 +216,13 @@ function buildMonthCells(monthAnchor: Date, events: BillEvent[]): DayCell[] {
 
   const eventsByDay = new Map<string, BillEvent[]>();
   for (const e of events) {
+    // e.date is a calendar date the API serialized as UTC-midnight ISO
+    // (e.g. "2026-05-27T00:00:00.000Z"). Read its UTC components so the bill
+    // lands on its intended day — local getters would roll it back a day for
+    // viewers behind UTC. Cell keys below use local components, which represent
+    // the same intended calendar day, so the two line up.
     const ed = new Date(e.date);
-    const key = `${ed.getFullYear()}-${ed.getMonth()}-${ed.getDate()}`;
+    const key = `${ed.getUTCFullYear()}-${ed.getUTCMonth()}-${ed.getUTCDate()}`;
     const list = eventsByDay.get(key) ?? [];
     list.push(e);
     eventsByDay.set(key, list);
