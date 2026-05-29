@@ -4,9 +4,11 @@ import {
   count,
   desc,
   eq,
+  gte,
   ilike,
   isNotNull,
   isNull,
+  lte,
   or,
   sql,
 } from "drizzle-orm";
@@ -97,11 +99,11 @@ function buildFilterConditions(userId: string, filters: TransactionFilters) {
       between(transactions.date, filters.startDate, endOfDay),
     );
   } else if (filters.startDate) {
-    conditions.push(sql`${transactions.date} >= ${filters.startDate.toISOString()}`);
+    conditions.push(gte(transactions.date, filters.startDate));
   } else if (filters.endDate) {
     const endOfDay = new Date(filters.endDate);
     endOfDay.setHours(23, 59, 59, 999);
-    conditions.push(sql`${transactions.date} <= ${endOfDay.toISOString()}`);
+    conditions.push(lte(transactions.date, endOfDay));
   }
   if (filters.search) {
     const pattern = `%${filters.search}%`;
