@@ -36,6 +36,7 @@
     "next-themes": "^0.4.6",
     "nextjs-toploader": "^3.9.17",
     "plaid": "^41.4.0",
+    "pnpm": "^11.4.0",
     "postgres": "^3.4.7",
     "radix-ui": "^1.4.3",
     "react": "^19.2.0",

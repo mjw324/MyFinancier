@@ -184,8 +184,9 @@ export async function getTransactionTotals(
   const [result] = await db
     .select({
       count: count(),
-      expenses: sql<string>`COALESCE(SUM(CASE WHEN ${transactions.amount} > 0 THEN ${transactions.amount} ELSE 0 END), 0)`,
-      incomeNeg: sql<string>`COALESCE(SUM(CASE WHEN ${transactions.amount} < 0 THEN ${transactions.amount} ELSE 0 END), 0)`,
+      // Refunds (negative, flagged) net against expenses and are excluded from income.
+      expenses: sql<string>`COALESCE(SUM(CASE WHEN ${transactions.amount} > 0 OR ${transactions.isRefund} THEN ${transactions.amount} ELSE 0 END), 0)`,
+      incomeNeg: sql<string>`COALESCE(SUM(CASE WHEN ${transactions.amount} < 0 AND NOT ${transactions.isRefund} THEN ${transactions.amount} ELSE 0 END), 0)`,
     })
     .from(transactions)
     .where(

@@ -14,6 +14,7 @@ import {
   clearStreamClassification as clearStreamClassificationCore,
   deleteSpendingRule as deleteSpendingRuleCore,
 } from "@/lib/spending/classify";
+import { detectAndFlagRefunds } from "@/lib/plaid/refunds";
 
 const updateSchema = z.object({
   transactionId: z.string().min(1),
@@ -87,6 +88,69 @@ export async function updateTransactionOverridesAction(
     await db
       .update(transactions)
       .set({ customName, customCategory })
+      .where(
+        and(
+          eq(transactions.id, parsed.data.transactionId),
+          eq(transactions.userId, userId),
+        ),
+      );
+  }
+
+  revalidatePath("/transactions");
+  revalidatePath("/");
+  return { success: true as const };
+}
+
+const refundSchema = z.object({
+  transactionId: z.string().min(1),
+  // true / false = manual override; null = reset to auto-detection.
+  isRefund: z.boolean().nullable(),
+});
+
+export type SetTransactionRefundInput = z.infer<typeof refundSchema>;
+
+export async function setTransactionRefundAction(
+  input: SetTransactionRefundInput,
+) {
+  const session = await getServerSession();
+  if (!session?.user) {
+    return { success: false as const, error: "Unauthorized" };
+  }
+  const parsed = refundSchema.safeParse(input);
+  if (!parsed.success) {
+    return { success: false as const, error: "Invalid input" };
+  }
+  const userId = session.user.id;
+
+  const [tx] = await db
+    .select({ id: transactions.id })
+    .from(transactions)
+    .where(
+      and(
+        eq(transactions.id, parsed.data.transactionId),
+        eq(transactions.userId, userId),
+      ),
+    );
+  if (!tx) {
+    return { success: false as const, error: "Transaction not found" };
+  }
+
+  if (parsed.data.isRefund === null) {
+    // Reset to auto: clear the override, then let detection recompute.
+    await db
+      .update(transactions)
+      .set({ isRefund: false, refundSource: null })
+      .where(
+        and(
+          eq(transactions.id, parsed.data.transactionId),
+          eq(transactions.userId, userId),
+        ),
+      );
+    await detectAndFlagRefunds(userId);
+  } else {
+    await db
+      .update(transactions)
+      .set({ isRefund: parsed.data.isRefund, refundSource: "manual" })
       .where(
         and(
           eq(transactions.id, parsed.data.transactionId),
