@@ -1,6 +1,14 @@
-onlyBuiltDependencies:
-  - sharp
-
-ignoredBuiltDependencies:
-  - esbuild
-  - unrs-resolver
+# pnpm 11 build-script policy.
+#
+# pnpm 11 removed onlyBuiltDependencies / ignoredBuiltDependencies and replaced
+# them with this single allowBuilds map. With strictDepBuilds defaulting to true,
+# any dependency with a build (postinstall) script that is NOT listed here is
+# treated as "unreviewed" and the install fails with ERR_PNPM_IGNORED_BUILDS
+# (this is what broke the Railway build on a fresh store).
+#
+# Listing a package (true OR false) marks it reviewed, so the install no longer
+# errors. true => its build script runs; false => it is consciously skipped.
+allowBuilds:
+  sharp: true          # native image processing used by next/image at runtime
+  esbuild: false       # dev/test-only (vite/vitest); not needed in the prod build
+  unrs-resolver: false # dev/lint-only (eslint resolver); not needed in the prod build
