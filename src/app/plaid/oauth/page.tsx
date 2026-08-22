@@ -25,7 +25,13 @@ export default function PlaidOAuthReturnPage() {
   }, [router]);
 
   const onSuccess = useCallback(
-    async (publicToken: string, metadata: any) => {
+    async (publicToken: string | null, metadata: any) => {
+      if (!publicToken) {
+        toast.error("Failed to link account. Missing token.");
+        sessionStorage.removeItem("plaid_link_token");
+        router.replace("/accounts");
+        return;
+      }
       try {
         const response = await fetch("/api/plaid/exchange-token", {
           method: "POST",
@@ -98,7 +104,7 @@ function PlaidOAuthLauncher({
 }: {
   token: string;
   receivedRedirectUri: string;
-  onSuccess: (publicToken: string, metadata: any) => void;
+  onSuccess: (publicToken: string | null, metadata: any) => void;
   onExit: (error: any) => void;
 }) {
   const { open, ready } = usePlaidLink({

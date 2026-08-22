@@ -20,7 +20,7 @@ function PlaidLinkLauncher({
   onExit,
 }: {
   token: string;
-  onSuccess: (publicToken: string, metadata: any) => void;
+  onSuccess: (publicToken: string | null, metadata: any) => void;
   onExit: (error: any) => void;
 }) {
   const { open, ready } = usePlaidLink({ token, onSuccess, onExit });
@@ -43,7 +43,12 @@ export function PlaidLinkButton({
   const [isLoading, setIsLoading] = useState(false);
 
   const onSuccess = useCallback(
-    async (publicToken: string, metadata: any) => {
+    async (publicToken: string | null, metadata: any) => {
+      if (!publicToken) {
+        toast.error("Failed to link account. Missing token.");
+        setLinkToken(null);
+        return;
+      }
       try {
         const response = await fetch("/api/plaid/exchange-token", {
           method: "POST",

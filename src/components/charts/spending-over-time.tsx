@@ -137,7 +137,7 @@ export function SpendingOverTime({ data }: SpendingOverTimeProps) {
             ) : (
               <ChartTooltipContent
                 formatter={(value) => formatCurrency(Number(value))}
-                labelFormatter={(label) => dateLabels[label] ?? label}
+                labelFormatter={(label) => { const key = String(label); return dateLabels[key] ?? key; }}
               />
             )
           }

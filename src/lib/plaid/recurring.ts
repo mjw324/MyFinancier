@@ -41,8 +41,8 @@ export async function fetchRecurringTransactions(
   const accountByPlaidId = new Map(accounts.map((a) => [a.plaidAccountId, a]));
 
   const tagged: Array<{ stream: TransactionStream; flowType: FlowType }> = [
-    ...inflow_streams.map((s) => ({ stream: s, flowType: "inflow" as const })),
-    ...outflow_streams.map((s) => ({
+    ...inflow_streams.map((s: TransactionStream) => ({ stream: s, flowType: "inflow" as const })),
+    ...outflow_streams.map((s: TransactionStream) => ({
       stream: s,
       flowType: "outflow" as const,
     })),

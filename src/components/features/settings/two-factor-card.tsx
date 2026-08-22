@@ -58,7 +58,7 @@ export function TwoFactorCard({
         return;
       }
 
-      if (data?.backupCodes) {
+      if (data && "backupCodes" in data && data.backupCodes) {
         setBackupCodes(data.backupCodes);
       }
 
@@ -130,7 +130,7 @@ export function TwoFactorCard({
         return;
       }
 
-      if (data?.backupCodes) {
+      if (data && "backupCodes" in data && data.backupCodes) {
         setBackupCodes(data.backupCodes);
       }
       setDialog("show-codes");
