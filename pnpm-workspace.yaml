@@ -11,3 +11,8 @@ allowBuilds:
   esbuild: set this to true or false
   sharp: set this to true or false
   unrs-resolver: set this to true or false
+
+minimumReleaseAgeExclude:
+  - '@electric-sql/pglite@0.5.6'
+  - jose@6.2.10
+  - react-hook-form@7.86.0

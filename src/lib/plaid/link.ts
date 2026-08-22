@@ -1,5 +1,5 @@
 import { CountryCode, Products } from "plaid";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { plaidItems } from "@/lib/db/schema/plaid";
 import { financialAccounts } from "@/lib/db/schema/accounts";
@@ -55,19 +55,41 @@ export async function exchangePublicToken(
       institutionName: metadata.institution.name,
       status: "active",
     })
+    .onConflictDoUpdate({
+      target: plaidItems.itemId,
+      set: {
+        accessToken: encryptedToken,
+        institutionId: metadata.institution.institutionId,
+        institutionName: metadata.institution.name,
+        status: "active",
+        updatedAt: new Date(),
+      },
+    })
     .returning();
 
   if (metadata.accounts.length > 0) {
-    await db.insert(financialAccounts).values(
-      metadata.accounts.map((acct) => ({
-        userId,
-        plaidItemId: plaidItem.id,
-        plaidAccountId: acct.id,
-        name: acct.name,
-        type: acct.type,
-        subtype: acct.subtype,
-      })),
-    );
+    await db
+      .insert(financialAccounts)
+      .values(
+        metadata.accounts.map((acct) => ({
+          userId,
+          plaidItemId: plaidItem.id,
+          plaidAccountId: acct.id,
+          name: acct.name,
+          type: acct.type,
+          subtype: acct.subtype,
+        })),
+      )
+      .onConflictDoUpdate({
+        target: financialAccounts.plaidAccountId,
+        set: {
+          name: sql`excluded.name`,
+          type: sql`excluded.type`,
+          subtype: sql`excluded.subtype`,
+          plaidItemId: sql`excluded.plaid_item_id`,
+          userId: sql`excluded.user_id`,
+        },
+      });
   }
 
   return {
