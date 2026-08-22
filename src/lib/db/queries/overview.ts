@@ -1,4 +1,4 @@
-import { and, between, eq, gt, lt, sql } from "drizzle-orm";
+import { and, between, eq, lt, sql } from "drizzle-orm";
 import { db } from "..";
 import { financialAccounts, transactions, budgets, categories } from "../schema";
 import { getPeriodStart, getPeriodEnd } from "@/lib/utils/budget-periods";
@@ -27,7 +27,8 @@ export async function getOverviewStats(userId: string) {
         eq(transactions.userId, userId),
         eq(transactions.isTransfer, false),
         between(transactions.date, startOfMonth, endOfMonth),
-        gt(transactions.amount, "0"),
+        // Spending plus refunds (negative); the signed sum nets refunds against expenses.
+        sql`(${transactions.amount}::numeric > 0 OR ${transactions.isRefund})`,
       ),
     );
 
@@ -41,6 +42,7 @@ export async function getOverviewStats(userId: string) {
       and(
         eq(transactions.userId, userId),
         eq(transactions.isTransfer, false),
+        eq(transactions.isRefund, false),
         between(transactions.date, startOfMonth, endOfMonth),
         lt(transactions.amount, "0"),
       ),
@@ -73,7 +75,8 @@ export async function getSpendingByCategory(
         eq(transactions.userId, userId),
         eq(transactions.isTransfer, false),
         between(transactions.date, startDate, endDate),
-        gt(transactions.amount, "0"),
+        // Include refunds so a return nets against its own category total.
+        sql`(${transactions.amount}::numeric > 0 OR ${transactions.isRefund})`,
       ),
     )
     .groupBy(transactions.category);
@@ -108,7 +111,8 @@ export async function getBudgetProgress(userId: string) {
             eq(transactions.isTransfer, false),
             eq(transactions.category, budget.category?.name ?? ""),
             between(transactions.date, periodStart, periodEnd),
-            gt(transactions.amount, "0"),
+            // Include refunds so a return reduces budget usage.
+            sql`(${transactions.amount}::numeric > 0 OR ${transactions.isRefund})`,
           ),
         );
 

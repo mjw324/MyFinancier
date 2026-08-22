@@ -44,6 +44,8 @@ export const transactions = pgTable(
     nameSignature: text("name_signature"),
     isTransfer: boolean("is_transfer").notNull().default(false),
     transferPairId: text("transfer_pair_id"),
+    isRefund: boolean("is_refund").notNull().default(false),
+    refundSource: text("refund_source"),
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow(),
   },
   (table) => [
@@ -61,6 +63,11 @@ export const transactions = pgTable(
       table.isTransfer,
     ),
     index("transactions_transfer_pair_id_idx").on(table.transferPairId),
+    index("transactions_user_is_refund_idx").on(table.userId, table.isRefund),
+    check(
+      "transactions_refund_source_check",
+      sql`${table.refundSource} IS NULL OR ${table.refundSource} IN ('auto','manual')`,
+    ),
     check(
       "transactions_spending_type_check",
       sql`${table.spendingType} IS NULL OR ${table.spendingType} IN ('necessary','discretionary')`,

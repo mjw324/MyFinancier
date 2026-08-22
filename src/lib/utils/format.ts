@@ -55,6 +55,12 @@ export function formatDate(
 ): string {
   const d = typeof date === "string" ? new Date(date) : date;
   return d.toLocaleDateString("en-US", {
+    // Transaction / recurring-stream / budget dates are calendar dates stored at
+    // UTC midnight. Format in UTC so they never shift across the day boundary when
+    // the server (Railway = UTC) and the viewer's browser are in different
+    // timezones. Without this, a UTC-midnight date renders as the previous day for
+    // any viewer behind UTC (e.g. US Eastern).
+    timeZone: "UTC",
     month: style === "short" ? "short" : "long",
     day: "numeric",
     year: "numeric",
@@ -74,7 +80,13 @@ export function formatRelativeDate(date: Date | string): string {
   if (diffHours < 24) return `${diffHours}h ago`;
   if (diffDays === 1) return "Yesterday";
   if (diffDays < 7) return `${diffDays}d ago`;
-  return formatDate(d, "short");
+  // This is a real instant (e.g. lastSyncedAt), not a calendar date — render it
+  // in the viewer's local timezone rather than UTC.
+  return d.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 }
 
 export function formatCategory(category: string): string {

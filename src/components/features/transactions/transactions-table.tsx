@@ -33,6 +33,8 @@ interface Transaction {
   normalizedMerchant: string | null;
   nameSignature: string | null;
   isTransfer: boolean | null;
+  isRefund: boolean | null;
+  refundSource: string | null;
   financialAccount: {
     name: string;
   } | null;
@@ -106,6 +108,11 @@ export function TransactionsTable({
                         {txn.isTransfer && (
                           <Badge variant="secondary" className="text-xs">
                             Transfer
+                          </Badge>
+                        )}
+                        {txn.isRefund && (
+                          <Badge variant="secondary" className="text-xs">
+                            Refund
                           </Badge>
                         )}
                       </p>

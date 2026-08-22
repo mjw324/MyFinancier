@@ -22,8 +22,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { RotateCcw } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 import { displayName, formatCategory } from "@/lib/utils/format";
-import { updateTransactionOverridesAction } from "@/app/(routes)/(dashboard)/transactions/actions";
+import {
+  updateTransactionOverridesAction,
+  setTransactionRefundAction,
+} from "@/app/(routes)/(dashboard)/transactions/actions";
 import { ClassifyPopover } from "@/components/features/transactions/classify-popover";
 
 const NONE_CATEGORY = "__none__";
@@ -44,6 +48,8 @@ interface EditTransactionDialogProps {
     spendingTypeSource: string | null;
     normalizedMerchant: string | null;
     nameSignature: string | null;
+    isRefund: boolean | null;
+    refundSource: string | null;
   };
   categories: string[];
 }
@@ -56,9 +62,14 @@ export function EditTransactionDialog({
 }: EditTransactionDialogProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const [isRefundPending, startRefundTransition] = useTransition();
   const [nickname, setNickname] = useState(transaction.customName ?? "");
   const [category, setCategory] = useState<string>(
     transaction.customCategory ?? NONE_CATEGORY,
+  );
+  const [isRefund, setIsRefund] = useState(transaction.isRefund ?? false);
+  const [refundIsManual, setRefundIsManual] = useState(
+    transaction.refundSource === "manual",
   );
 
   // Reset local state when the dialog opens for a different transaction
@@ -66,8 +77,36 @@ export function EditTransactionDialog({
     if (open) {
       setNickname(transaction.customName ?? "");
       setCategory(transaction.customCategory ?? NONE_CATEGORY);
+      setIsRefund(transaction.isRefund ?? false);
+      setRefundIsManual(transaction.refundSource === "manual");
     }
-  }, [open, transaction.customName, transaction.customCategory]);
+  }, [
+    open,
+    transaction.customName,
+    transaction.customCategory,
+    transaction.isRefund,
+    transaction.refundSource,
+  ]);
+
+  const isInflow = parseFloat(transaction.amount) < 0;
+
+  function handleRefundChange(next: boolean | null) {
+    // Optimistic local state; null = reset to auto-detection.
+    setIsRefund(next === null ? false : next);
+    setRefundIsManual(next !== null);
+    startRefundTransition(async () => {
+      const result = await setTransactionRefundAction({
+        transactionId: transaction.id,
+        isRefund: next,
+      });
+      if (result.success) {
+        toast.success(next === null ? "Reset to auto" : "Refund updated");
+        router.refresh();
+      } else {
+        toast.error(result.error);
+      }
+    });
+  }
 
   const plaidName = transaction.merchantName || transaction.name;
   const plaidCategory = transaction.category;
@@ -199,6 +238,38 @@ export function EditTransactionDialog({
                     }) || transaction.name
                   }
                 />
+              </div>
+            </div>
+          )}
+
+          {isInflow && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="refund">Treat as refund</Label>
+                {refundIsManual && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-auto px-2 py-0 text-xs"
+                    disabled={isRefundPending}
+                    onClick={() => handleRefundChange(null)}
+                  >
+                    <RotateCcw className="size-3" />
+                    Reset
+                  </Button>
+                )}
+              </div>
+              <div className="flex items-center gap-3">
+                <Switch
+                  id="refund"
+                  checked={isRefund}
+                  disabled={isRefundPending}
+                  onCheckedChange={(checked) => handleRefundChange(checked)}
+                />
+                <span className="text-xs text-muted-foreground">
+                  Excludes this from income and nets it against spending.
+                </span>
               </div>
             </div>
           )}

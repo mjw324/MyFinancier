@@ -1,4 +1,4 @@
-import { and, eq, inArray, notInArray, sql } from "drizzle-orm";
+import { and, eq, inArray, lt, notInArray, sql } from "drizzle-orm";
 import type { TransactionStream } from "plaid";
 import { db } from "@/lib/db";
 import { plaidItems } from "@/lib/db/schema/plaid";
@@ -273,7 +273,7 @@ async function linkOrphanTransactions(
           eq(transactions.accountId, stream.accountId),
           sql`${transactions.recurringStreamId} IS NULL`,
           sql`LOWER(${transactions.merchantName}) = LOWER(${stream.merchantName})`,
-          sql`${transactions.date} < ${stream.firstDate}`,
+          lt(transactions.date, stream.firstDate),
           sql`ABS(${transactions.amount}::numeric) BETWEEN ${Math.abs(minAmount)} AND ${Math.abs(maxAmount)}`,
           signCondition,
         ),
