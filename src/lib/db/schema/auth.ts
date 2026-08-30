@@ -1,4 +1,11 @@
-import { boolean, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import {
+  boolean,
+  integer,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+} from "drizzle-orm/pg-core";
 
 export const user = pgTable("user", {
   id: text("id").primaryKey(),
@@ -33,26 +40,30 @@ export const session = pgTable("session", {
     .references(() => user.id),
 }).enableRLS();
 
-export const account = pgTable("account", {
-  id: text("id").primaryKey(),
-  accountId: text("accountId").notNull(),
-  providerId: text("providerId").notNull(),
-  issuer: text("issuer"),
-  userId: text("userId")
-    .notNull()
-    .references(() => user.id),
-  accessToken: text("accessToken"),
-  refreshToken: text("refreshToken"),
-  idToken: text("idToken"),
-  accessTokenExpiresAt: timestamp("accessTokenExpiresAt"),
-  refreshTokenExpiresAt: timestamp("refreshTokenExpiresAt"),
-  scope: text("scope"),
-  password: text("password"),
-  createdAt: timestamp("createdAt").defaultNow(),
-  updatedAt: timestamp("updatedAt")
-    .defaultNow()
-    .$onUpdate(() => new Date()),
-}).enableRLS();
+export const account = pgTable(
+  "account",
+  {
+    id: text("id").primaryKey(),
+    accountId: text("accountId").notNull(),
+    providerId: text("providerId").notNull(),
+    issuer: text("issuer").notNull(),
+    userId: text("userId")
+      .notNull()
+      .references(() => user.id),
+    accessToken: text("accessToken"),
+    refreshToken: text("refreshToken"),
+    idToken: text("idToken"),
+    accessTokenExpiresAt: timestamp("accessTokenExpiresAt"),
+    refreshTokenExpiresAt: timestamp("refreshTokenExpiresAt"),
+    scope: text("scope"),
+    password: text("password"),
+    createdAt: timestamp("createdAt").defaultNow(),
+    updatedAt: timestamp("updatedAt")
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [uniqueIndex("account_issuer_accountId_idx").on(t.issuer, t.accountId)]
+).enableRLS();
 
 export const verification = pgTable("verification", {
   id: text("id").primaryKey(),
@@ -70,6 +81,8 @@ export const twoFactor = pgTable("twoFactor", {
   secret: text("secret").notNull(),
   backupCodes: text("backupCodes").notNull(),
   verified: boolean("verified").default(false),
+  failedVerificationCount: integer("failedVerificationCount").default(0),
+  lockedUntil: timestamp("lockedUntil"),
   userId: text("userId")
     .notNull()
     .references(() => user.id, { onDelete: "cascade" }),
