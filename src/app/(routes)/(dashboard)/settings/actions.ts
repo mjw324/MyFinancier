@@ -26,7 +26,7 @@ export async function unlinkPlaidItemAction(plaidItemId: string) {
   if (!session?.user) return { success: false as const, error: "Unauthorized" };
 
   const [item] = await db
-    .select({ id: plaidItems.id })
+    .select({ id: plaidItems.id, accessToken: plaidItems.accessToken })
     .from(plaidItems)
     .where(
       and(
@@ -37,6 +37,38 @@ export async function unlinkPlaidItemAction(plaidItemId: string) {
 
   if (!item) {
     return { success: false as const, error: "Plaid item not found" };
+  }
+
+  // Remove the Item on Plaid's side BEFORE touching the local rows. The row
+  // holds the only copy of the access token, so deleting it first would leave
+  // the Item active on Plaid forever — billable, and emitting webhooks we can
+  // no longer resolve to a user. Bailing out early instead lets the user retry.
+  let accessToken: string;
+  try {
+    accessToken = decrypt(item.accessToken);
+  } catch (error) {
+    console.error(
+      `Failed to decrypt access token for item ${plaidItemId}:`,
+      error instanceof Error ? error.message : error,
+    );
+    return { success: false as const, error: PLAID_ERROR_MESSAGES.DEFAULT };
+  }
+
+  try {
+    await plaidClient.itemRemove({ access_token: accessToken });
+  } catch (error) {
+    // ITEM_NOT_FOUND means the Item is already gone on Plaid's side (removed
+    // previously, or access revoked by the user) — that is the end state we
+    // want, so fall through and clean up locally.
+    const code = plaidErrorCode(error);
+    if (code !== "ITEM_NOT_FOUND") {
+      // Log the code only — Plaid client errors carry the request body, which
+      // contains the access token.
+      console.error(
+        `Failed to remove item ${plaidItemId} from Plaid: ${code ?? "unknown error"}`,
+      );
+      return { success: false as const, error: mapPlaidErrorMessage(error) };
+    }
   }
 
   // Delete transactions linked to accounts under this plaid item
@@ -193,14 +225,19 @@ export async function updateHideTransfersAction(hide: boolean) {
   return { success: true as const };
 }
 
-function mapPlaidErrorMessage(error: unknown): string {
+function plaidErrorCode(error: unknown): string | undefined {
   if (error && typeof error === "object" && "response" in error) {
     const resp = (error as { response?: { data?: { error_code?: string } } })
       .response;
-    const code = resp?.data?.error_code;
-    if (code && code in PLAID_ERROR_MESSAGES) {
-      return PLAID_ERROR_MESSAGES[code];
-    }
+    return resp?.data?.error_code;
+  }
+  return undefined;
+}
+
+function mapPlaidErrorMessage(error: unknown): string {
+  const code = plaidErrorCode(error);
+  if (code && code in PLAID_ERROR_MESSAGES) {
+    return PLAID_ERROR_MESSAGES[code];
   }
   return PLAID_ERROR_MESSAGES.DEFAULT;
 }
