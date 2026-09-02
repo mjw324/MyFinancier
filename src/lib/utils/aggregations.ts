@@ -8,14 +8,33 @@ export interface PeriodTotals {
   expenses: number;
 }
 
+/**
+ * Income and expenses for a period.
+ *
+ * Refunds are netted against expenses and excluded from income, matching
+ * `getOverviewStats` and `getTransactionTotals`. Before this, the dashboard
+ * ignored `isRefund` entirely while both of those honoured it, so a period
+ * containing a refund showed different figures on two screens: May 2026's
+ * $1,014 Apple refund appeared as income on the dashboard and as reduced
+ * spending on the transactions page.
+ */
 export function aggregateIncomeAndExpenses(
-  txns: ReadonlyArray<{ amount: string; isTransfer?: boolean | null }>,
+  txns: ReadonlyArray<{
+    amount: string;
+    isTransfer?: boolean | null;
+    isRefund?: boolean | null;
+  }>,
 ): PeriodTotals {
   let income = 0;
   let expenses = 0;
   for (const t of txns) {
     if (t.isTransfer) continue;
     const amount = parseFloat(t.amount);
+    if (t.isRefund) {
+      // A refund is negative; adding it reduces the category it came from.
+      expenses += amount;
+      continue;
+    }
     if (amount > 0) {
       expenses += amount;
     } else if (amount < 0) {
@@ -53,6 +72,7 @@ export function aggregateBySpendingType(
     amount: string;
     spendingType?: string | null;
     isTransfer?: boolean | null;
+    isRefund?: boolean | null;
   }>,
 ): SpendingTypeTotals {
   let necessary = 0;
@@ -62,6 +82,14 @@ export function aggregateBySpendingType(
   for (const t of txns) {
     if (t.isTransfer) continue;
     const amount = parseFloat(t.amount);
+    // A refund reduces the bucket it was spent from rather than counting as
+    // income, so the percentages here agree with the totals elsewhere.
+    if (t.isRefund) {
+      if (t.spendingType === "necessary") necessary += amount;
+      else if (t.spendingType === "discretionary") discretionary += amount;
+      else unclassified += amount;
+      continue;
+    }
     if (amount < 0) {
       income += Math.abs(amount);
       continue;

@@ -78,11 +78,17 @@ export async function getDashboardDataByRange(
   for (const txn of transactions) {
     if (txn.isTransfer) continue;
     const amount = parseFloat(txn.amount);
-    if (amount > 0) {
-      const cat = txn.category ?? "UNCATEGORIZED";
+    // Include refunds so a return nets against the category it came from,
+    // matching getSpendingByCategory and the transactions page.
+    if (amount > 0 || txn.isRefund) {
+      // The user's override wins, exactly as it does in the transactions
+      // filter, so clicking a slice opens the rows the slice was drawn from.
+      const cat = txn.customCategory ?? txn.category ?? "UNCATEGORIZED";
       categoryTotals.set(cat, (categoryTotals.get(cat) ?? 0) + amount);
       const d = txn.date;
-      const dayKey = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+      // Bucket by UTC day: these are calendar dates stored at UTC midnight, and
+      // local getters shift them a day for any viewer behind UTC.
+      const dayKey = `${d.getUTCFullYear()}-${d.getUTCMonth()}-${d.getUTCDate()}`;
       dailyTotals.set(dayKey, (dailyTotals.get(dayKey) ?? 0) + amount);
       if (!dailyDates.has(dayKey)) dailyDates.set(dayKey, d);
     }
@@ -101,10 +107,14 @@ export async function getDashboardDataByRange(
   const spendingOverTime = Array.from(dailyTotals.entries())
     .map(([key, total]) => {
       const d = dailyDates.get(key)!;
-      const rawDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      const rawDate = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
       return {
         sortKey: d.getTime(),
-        date: d.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+        date: d.toLocaleDateString("en-US", {
+          timeZone: "UTC",
+          month: "short",
+          day: "numeric",
+        }),
         rawDate,
         amount: Math.round(total * 100) / 100,
       };

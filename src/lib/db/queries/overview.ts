@@ -3,6 +3,7 @@ import { db } from "..";
 import { financialAccounts, transactions, budgets, categories } from "../schema";
 import { getPeriodStart, getPeriodEnd } from "@/lib/utils/budget-periods";
 import { getAccountsWithBalances } from "./accounts";
+import { sumMoney } from "@/lib/utils/money";
 
 export async function getOverviewStats(userId: string) {
   const now = new Date();
@@ -10,11 +11,12 @@ export async function getOverviewStats(userId: string) {
   const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
 
   const accounts = await getAccountsWithBalances(userId);
-  const netWorth = accounts.reduce((sum, a) => sum + a.netWorthSettled, 0);
-  const projectedNetWorth = accounts.reduce(
-    (sum, a) => sum + a.netWorthProjected,
-    0,
-  );
+  // Round the aggregate, not each term. Postgres `numeric` is exact decimal but
+  // these balances have already been through parseFloat, so 0.10 + 0.20 sums to
+  // 0.30000000000000004 and surfaces as a net worth that is off by a fraction
+  // of a cent.
+  const netWorth = sumMoney(accounts.map((a) => a.netWorthSettled));
+  const projectedNetWorth = sumMoney(accounts.map((a) => a.netWorthProjected));
 
   const [expenseStats] = await db
     .select({
@@ -64,9 +66,14 @@ export async function getSpendingByCategory(
   startDate: Date,
   endDate: Date,
 ) {
+  // A user's own category override must win here exactly as it does in the
+  // transactions filter, or clicking a chart slice opens a different set of
+  // rows than the slice was drawn from.
+  const effectiveCategory = sql<string>`coalesce(${transactions.customCategory}, ${transactions.category})`;
+
   const rows = await db
     .select({
-      category: transactions.category,
+      category: effectiveCategory,
       totalAmount: sql<string>`sum(${transactions.amount}::numeric)`,
     })
     .from(transactions)
@@ -79,7 +86,7 @@ export async function getSpendingByCategory(
         sql`(${transactions.amount}::numeric > 0 OR ${transactions.isRefund})`,
       ),
     )
-    .groupBy(transactions.category);
+    .groupBy(effectiveCategory);
 
   return rows.map((row) => ({
     category: row.category ?? "Uncategorized",
@@ -109,7 +116,7 @@ export async function getBudgetProgress(userId: string) {
           and(
             eq(transactions.userId, userId),
             eq(transactions.isTransfer, false),
-            eq(transactions.category, budget.category?.name ?? ""),
+            sql`coalesce(${transactions.customCategory}, ${transactions.category}) = ${budget.category?.name ?? ""}`,
             between(transactions.date, periodStart, periodEnd),
             // Include refunds so a return reduces budget usage.
             sql`(${transactions.amount}::numeric > 0 OR ${transactions.isRefund})`,
