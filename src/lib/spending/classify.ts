@@ -4,6 +4,15 @@ import { transactions } from "@/lib/db/schema/transactions";
 import { recurringStreams } from "@/lib/db/schema/recurring";
 import { spendingRules } from "@/lib/db/schema/spending-rules";
 
+
+/** Error whose message is safe to show to the user. */
+export class ClassificationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ClassificationError";
+  }
+}
+
 export type SpendingType = "necessary" | "discretionary";
 export type SpendingTypeSource = "manual" | "stream" | "rule" | "override";
 export type ClassifyScope =
@@ -125,9 +134,9 @@ export async function classifyTransaction(
         ),
       )
       .limit(1);
-    if (!row) throw new Error("Transaction not found");
+    if (!row) throw new ClassificationError("Transaction not found");
     if (Number(row.amount) < 0) {
-      throw new Error("Income transactions cannot be classified");
+      throw new ClassificationError("Income transactions cannot be classified");
     }
 
     if (scope === "transaction") {
@@ -144,7 +153,7 @@ export async function classifyTransaction(
 
     if (scope === "stream") {
       if (!row.recurringStreamId) {
-        throw new Error("Transaction is not part of a recurring stream");
+        throw new ClassificationError("Transaction is not part of a recurring stream");
       }
       await tx
         .update(recurringStreams)
@@ -174,7 +183,7 @@ export async function classifyTransaction(
 
     if (scope === "merchant") {
       if (!row.normalizedMerchant) {
-        throw new Error("Transaction has no merchant signature");
+        throw new ClassificationError("Transaction has no merchant signature");
       }
       await upsertRule(tx, userId, "merchant", row.normalizedMerchant, spendingType);
       // Apply to every matching transaction not under an override and not under a classified stream.
@@ -190,7 +199,7 @@ export async function classifyTransaction(
 
     if (scope === "name_signature") {
       if (!row.nameSignature) {
-        throw new Error("Transaction has no name signature");
+        throw new ClassificationError("Transaction has no name signature");
       }
       await upsertRule(tx, userId, "name_signature", row.nameSignature, spendingType);
       await applyRuleToTransactions(

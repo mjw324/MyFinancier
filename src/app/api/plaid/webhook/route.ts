@@ -9,6 +9,7 @@ import { recurringStreams } from "@/lib/db/schema/recurring";
 import { plaidClient } from "@/lib/plaid/client";
 import { syncTransactions } from "@/lib/plaid/sync";
 import { fetchRecurringTransactions } from "@/lib/plaid/recurring";
+import { logError } from "@/lib/logging";
 
 // --- Webhook Verification ---
 
@@ -126,7 +127,7 @@ export async function POST(request: Request) {
     try {
       await verifyPlaidWebhook(rawBody, verificationHeader);
     } catch (verifyError) {
-      console.error("Webhook verification failed:", verifyError);
+      logError("plaid-webhook.verification-failed", verifyError);
       return NextResponse.json(
         { success: false, error: "Webhook verification failed" },
         { status: 401 },
@@ -175,7 +176,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true, data: { received: true } });
   } catch (error) {
-    console.error("Webhook processing error:", error);
+    logError("plaid-webhook.processing-failed", error);
     return NextResponse.json(
       { success: false, error: "Internal server error" },
       { status: 500 },
@@ -202,7 +203,7 @@ async function handleSyncUpdatesAvailable(body: unknown) {
   try {
     await syncTransactions(item.id);
   } catch (error) {
-    console.error(`Webhook sync failed for item ${item.id}:`, error);
+    logError("plaid-webhook.sync-failed", error, { plaidItemRowId: item.id });
     return;
   }
 
@@ -217,10 +218,9 @@ async function handleSyncUpdatesAvailable(body: unknown) {
       await fetchRecurringTransactions(item.id);
     }
   } catch (error) {
-    console.error(
-      `Recurring fetch failed for item ${item.id} after sync:`,
-      error,
-    );
+    logError("plaid-webhook.recurring-after-sync-failed", error, {
+      plaidItemRowId: item.id,
+    });
   }
 }
 
@@ -247,10 +247,9 @@ async function handleRecurringTransactionsUpdate(body: unknown) {
   try {
     await fetchRecurringTransactions(item.id);
   } catch (error) {
-    console.error(
-      `RECURRING_TRANSACTIONS_UPDATE handler failed for item ${item.id}:`,
-      error,
-    );
+    logError("plaid-webhook.recurring-update-failed", error, {
+      plaidItemRowId: item.id,
+    });
   }
 }
 

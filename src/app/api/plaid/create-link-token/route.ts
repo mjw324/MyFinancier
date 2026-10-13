@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getServerSession } from "@/lib/auth/get-session";
 import { createLinkToken, createUpdateLinkToken } from "@/lib/plaid/link";
+import { logError } from "@/lib/logging";
 
 const RequestSchema = z
   .object({
@@ -35,7 +36,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true, data: result });
   } catch (error) {
-    console.error("Error creating link token:", error);
+    logError("plaid-link-token.create-failed", error);
     return NextResponse.json(
       { success: false, error: "Failed to create link token" },
       { status: 500 },

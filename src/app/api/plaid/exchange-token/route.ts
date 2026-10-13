@@ -7,6 +7,7 @@ import { plaidItems } from "@/lib/db/schema/plaid";
 import { exchangePublicToken } from "@/lib/plaid/link";
 import { syncTransactions } from "@/lib/plaid/sync";
 import { PLAID_ERROR_MESSAGES } from "@/lib/plaid/types";
+import { logError, plaidErrorCode } from "@/lib/logging";
 
 const ExchangeTokenSchema = z.object({
   publicToken: z.string().min(1, "Public token is required"),
@@ -62,13 +63,15 @@ export async function POST(request: Request) {
 
     if (newItem) {
       syncTransactions(newItem.id).catch((error) => {
-        console.error(`Initial sync failed for item ${newItem.id}:`, error);
+        logError("plaid-exchange.initial-sync-failed", error, {
+          plaidItemRowId: newItem.id,
+        });
       });
     }
 
     return NextResponse.json({ success: true, data: exchangeResult });
   } catch (error) {
-    console.error("Error exchanging token:", error);
+    logError("plaid-exchange.failed", error);
     return NextResponse.json(
       { success: false, error: mapPlaidErrorMessage(error) },
       { status: 500 },
@@ -77,17 +80,9 @@ export async function POST(request: Request) {
 }
 
 function mapPlaidErrorMessage(error: unknown): string {
-  if (
-    error &&
-    typeof error === "object" &&
-    "response" in error
-  ) {
-    const resp = (error as { response?: { data?: { error_code?: string } } })
-      .response;
-    const code = resp?.data?.error_code;
-    if (code && code in PLAID_ERROR_MESSAGES) {
-      return PLAID_ERROR_MESSAGES[code];
-    }
+  const code = plaidErrorCode(error);
+  if (code && code in PLAID_ERROR_MESSAGES) {
+    return PLAID_ERROR_MESSAGES[code];
   }
   return PLAID_ERROR_MESSAGES.DEFAULT;
 }

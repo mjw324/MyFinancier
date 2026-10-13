@@ -6,6 +6,7 @@ import { restrictedUsernames } from "./usernames";
 import { sendEmail } from "@/lib/email/send";
 import { verificationEmailTemplate } from "@/lib/email/templates/verification";
 import { otpEmailTemplate } from "@/lib/email/templates/otp";
+import { logError } from "@/lib/logging";
 
 export const auth = betterAuth({
   database: drizzleAdapter(db, {
@@ -39,7 +40,6 @@ export const auth = betterAuth({
     autoSignInAfterVerification: true,
     sendVerificationEmail: async ({ user, url }) => {
       try {
-        console.log("[EMAIL] Sending verification email to:", user.email);
         await sendEmail({
           to: user.email,
           subject: "Verify your MyFinancier email",
@@ -48,9 +48,8 @@ export const auth = betterAuth({
             verificationUrl: url,
           }),
         });
-        console.log("[EMAIL] Verification email sent successfully");
       } catch (error) {
-        console.error("[EMAIL] Failed to send verification email:", error);
+        logError("email.verification-send-failed", error, { userId: user.id });
         throw error;
       }
     },
