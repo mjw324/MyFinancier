@@ -11,15 +11,24 @@ import { StreamDetailSheet } from "./stream-detail-sheet";
 
 interface BillEvent {
   stream_id: string;
+  /** Calendar date "YYYY-MM-DD" the event is shown on. */
   date: string;
+  due_date: string;
   amount: number;
   label: string;
   flow_type: "inflow" | "outflow";
+  kind: string;
   frequency: string;
-  status: string;
   has_price_change: boolean;
   tentative: boolean;
+  late: boolean;
   posted: boolean;
+}
+
+interface EndedStream {
+  stream_id: string;
+  label: string;
+  last_seen: string | null;
 }
 
 function formatBadgeAmount(n: number): string {
@@ -36,7 +45,7 @@ function formatBadgeAmount(n: number): string {
 
 interface ApiResponse {
   success: boolean;
-  data?: BillEvent[];
+  data?: { today: string; events: BillEvent[]; possibly_ended: EndedStream[] };
   error?: string;
 }
 
@@ -48,6 +57,8 @@ export function BillCalendar() {
     return new Date(d.getFullYear(), d.getMonth(), 1);
   });
   const [events, setEvents] = useState<BillEvent[]>([]);
+  const [ended, setEnded] = useState<EndedStream[]>([]);
+  const [today, setToday] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [openStreamId, setOpenStreamId] = useState<string | null>(null);
@@ -68,7 +79,9 @@ export function BillCalendar() {
       .then((res) => {
         if (cancelled) return;
         if (res.success && res.data) {
-          setEvents(res.data);
+          setEvents(res.data.events);
+          setEnded(res.data.possibly_ended);
+          setToday(res.data.today);
         } else {
           setError(res.error ?? "Failed to load");
         }
@@ -84,10 +97,10 @@ export function BillCalendar() {
     };
   }, [monthAnchor]);
 
-  const cells = useMemo(() => buildMonthCells(monthAnchor, events), [
-    monthAnchor,
-    events,
-  ]);
+  const cells = useMemo(
+    () => buildMonthCells(monthAnchor, events, today),
+    [monthAnchor, events, today],
+  );
 
   return (
     <Card>
@@ -176,9 +189,9 @@ export function BillCalendar() {
                       tone,
                       e.tentative && "border-dashed",
                     )}
-                    title={`${e.label} · ${formatCurrency(Math.abs(e.amount))}`}
+                    title={`${e.label} · ${formatCurrency(Math.abs(e.amount))}${e.late ? ` · late (due ${e.due_date})` : ""}${e.tentative ? " · tentative" : ""}`}
                   >
-                    <span className="truncate flex-1 min-w-0">{e.label}</span>
+                    <span className="hidden truncate flex-1 min-w-0 sm:inline">{e.label}</span>
                     {e.has_price_change && (
                       <span className="inline-block size-1.5 rounded-full bg-amber-500 shrink-0" />
                     )}
@@ -191,6 +204,12 @@ export function BillCalendar() {
             </div>
           ))}
         </div>
+        {ended.length > 0 && (
+          <p className="mt-2 text-xs text-muted-foreground">
+            Not shown (no activity for over a cycle, possibly ended):{" "}
+            {ended.map((e) => e.label).join(", ")}
+          </p>
+        )}
       </CardContent>
       <StreamDetailSheet
         streamId={openStreamId}
@@ -207,7 +226,11 @@ interface DayCell {
   events: BillEvent[];
 }
 
-function buildMonthCells(monthAnchor: Date, events: BillEvent[]): DayCell[] {
+function buildMonthCells(
+  monthAnchor: Date,
+  events: BillEvent[],
+  todayYmd: string | null,
+): DayCell[] {
   const year = monthAnchor.getFullYear();
   const month = monthAnchor.getMonth();
   const firstDay = new Date(year, month, 1);
@@ -221,14 +244,21 @@ function buildMonthCells(monthAnchor: Date, events: BillEvent[]): DayCell[] {
     // lands on its intended day — local getters would roll it back a day for
     // viewers behind UTC. Cell keys below use local components, which represent
     // the same intended calendar day, so the two line up.
-    const ed = new Date(e.date);
+    const ed = new Date(`${e.date.slice(0, 10)}T00:00:00Z`);
     const key = `${ed.getUTCFullYear()}-${ed.getUTCMonth()}-${ed.getUTCDate()}`;
     const list = eventsByDay.get(key) ?? [];
     list.push(e);
     eventsByDay.set(key, list);
   }
 
-  const today = new Date();
+  // "Today" is the server's view of the user's calendar date (saved time-zone
+  // preference wins over the browser), falling back to the browser's date.
+  const today = todayYmd
+    ? (() => {
+        const [y, m, d] = todayYmd.split("-").map(Number);
+        return new Date(y, m - 1, d);
+      })()
+    : new Date();
   const cells: DayCell[] = [];
   // leading days from previous month
   for (let i = startWeekday - 1; i >= 0; i--) {

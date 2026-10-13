@@ -1,30 +1,42 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getServerSession } from "@/lib/auth/get-session";
-import {
-  getRecentTransactionDatesByStream,
-  getStreamTransactionsInRange,
-  listRecurringStreams,
-  toProjectionInput,
-} from "@/lib/db/queries/recurring";
-import { projectStreamEvents } from "@/lib/plaid/projection";
+import { getStreamTransactionsInRange } from "@/lib/db/queries/recurring";
+import { getUserToday } from "@/lib/utils/user-time";
+import { loadForecastInput } from "@/lib/forecast/context";
+import { forecastWindow } from "@/lib/forecast/safe-to-spend";
+import { addUtcDays, utcDay } from "@/lib/plaid/projection";
 import { displayName } from "@/lib/utils/format";
+import { logError } from "@/lib/logging";
+
+const MAX_WINDOW_DAYS = 92;
+
+/** A real calendar date "YYYY-MM-DD", parsed as UTC midnight. */
+const calendarDate = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .transform((s) => new Date(`${s}T00:00:00Z`))
+  .refine((d) => !Number.isNaN(d.getTime()), "Invalid date");
 
 const QuerySchema = z
-  .object({
-    from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-    to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  })
+  .object({ from: calendarDate, to: calendarDate })
   .refine(
     ({ from, to }) => {
-      const fromDate = new Date(`${from}T00:00:00`);
-      const toDate = new Date(`${to}T23:59:59`);
-      const diffDays = (toDate.getTime() - fromDate.getTime()) / 86_400_000;
-      return diffDays >= 0 && diffDays <= 90;
+      const days = (to.getTime() - from.getTime()) / 86_400_000;
+      return days >= 0 && days <= MAX_WINDOW_DAYS;
     },
-    { message: "Window must be between 0 and 90 days" },
+    { message: `Window must be between 0 and ${MAX_WINDOW_DAYS} days` },
   );
 
+const ymd = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null);
+
+/**
+ * GET /api/bill-calendar?from=YYYY-MM-DD&to=YYYY-MM-DD
+ *
+ * Days before the viewer's today show what actually posted for each stream;
+ * today onward shows the projection (stale streams skipped, occurrences that
+ * already posted not repeated, late ones shown on today).
+ */
 export async function GET(request: Request) {
   const session = await getServerSession();
   if (!session?.user) {
@@ -43,108 +55,101 @@ export async function GET(request: Request) {
     );
   }
 
-  const windowStart = new Date(`${parsed.data.from}T00:00:00`);
-  const windowEnd = new Date(`${parsed.data.to}T23:59:59`);
+  const userId = session.user.id;
+  try {
+    const today = utcDay(await getUserToday());
+    const { from, to } = parsed.data;
+    const input = await loadForecastInput(userId, today);
+    const streamById = new Map(input.streams.map((s) => [s.streamId, s]));
 
-  const streams = await listRecurringStreams(session.user.id, {
-    activeOnly: true,
-  });
-  const streamById = new Map(streams.map((s) => [s.streamId, s]));
-  const recentDates = await getRecentTransactionDatesByStream(
-    session.user.id,
-    streams.map((s) => s.streamId),
-  );
+    const events: Array<{
+      stream_id: string;
+      date: string;
+      due_date: string;
+      amount: number;
+      label: string;
+      flow_type: "inflow" | "outflow";
+      kind: string;
+      frequency: string;
+      has_price_change: boolean;
+      tentative: boolean;
+      late: boolean;
+      posted: boolean;
+    }> = [];
 
-  // Split window at start-of-today: actual posted transactions for the past
-  // portion, projection for the future portion (today included as future so
-  // a bill posting today still shows as upcoming until the data syncs).
-  const now = new Date();
-  const startOfToday = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate(),
-  );
-
-  const pastEnd = new Date(
-    Math.min(windowEnd.getTime(), startOfToday.getTime() - 1),
-  );
-  const futureStart = new Date(
-    Math.max(windowStart.getTime(), startOfToday.getTime()),
-  );
-
-  const events: Array<{
-    stream_id: string;
-    date: string;
-    amount: number;
-    label: string;
-    flow_type: "inflow" | "outflow";
-    frequency: string;
-    status: string;
-    has_price_change: boolean;
-    tentative: boolean;
-    posted: boolean;
-  }> = [];
-
-  if (pastEnd >= windowStart) {
-    const posted = await getStreamTransactionsInRange(
-      session.user.id,
-      streams.map((s) => s.streamId),
-      windowStart,
-      pastEnd,
-    );
-    for (const p of posted) {
-      const s = streamById.get(p.streamId);
-      if (!s) continue;
-      // Per-transaction overrides take precedence; fall back to the stream's
-      // alias so a freshly-edited stream name still wins over Plaid's.
-      events.push({
-        stream_id: p.streamId,
-        date: p.date.toISOString(),
-        amount: p.amount,
-        label: displayName({
-          customName: p.customName ?? s.customName,
-          merchantName: p.merchantName ?? s.merchantName,
-          fallback: p.name || s.description,
-        }),
-        flow_type: s.flowType as "inflow" | "outflow",
-        frequency: s.frequency,
-        status: s.status,
-        has_price_change: false,
-        tentative: false,
-        posted: true,
-      });
+    const pastEnd = addUtcDays(today, -1);
+    if (from <= pastEnd && input.streams.length > 0) {
+      const posted = await getStreamTransactionsInRange(
+        userId,
+        input.streams.map((s) => s.streamId),
+        from,
+        to < pastEnd ? to : pastEnd,
+      );
+      for (const p of posted) {
+        const s = streamById.get(p.streamId);
+        if (!s) continue;
+        events.push({
+          stream_id: p.streamId,
+          date: ymd(p.date)!,
+          due_date: ymd(p.date)!,
+          amount: Math.abs(p.amount),
+          label: displayName({
+            customName: p.customName ?? s.customName,
+            merchantName: p.merchantName ?? s.merchantName,
+            fallback: p.name || s.description,
+          }),
+          flow_type: s.flowType,
+          kind: s.flowType === "inflow" ? "inflow" : "outflow",
+          frequency: s.frequency,
+          has_price_change: false,
+          tentative: false,
+          late: false,
+          posted: true,
+        });
+      }
     }
-  }
 
-  if (futureStart <= windowEnd) {
-    const projected = streams.flatMap((row) =>
-      projectStreamEvents(
-        toProjectionInput(row, recentDates.get(row.streamId) ?? []),
-        futureStart,
-        windowEnd,
-      ),
-    );
+    const futureStart = from > today ? from : today;
+    const { events: projected, possiblyEnded } = forecastWindow(input, futureStart, to);
     for (const e of projected) {
       events.push({
         stream_id: e.streamId,
-        date: e.date.toISOString(),
-        amount: e.amount,
-        label: displayName({
-          customName: e.customName,
-          merchantName: e.merchantName,
-          fallback: e.description,
-        }),
+        date: ymd(e.date)!,
+        due_date: ymd(e.dueDate)!,
+        amount: e.amountCents / 100,
+        label: e.label,
         flow_type: e.flowType,
+        kind: e.kind,
         frequency: e.frequency,
-        status: e.status,
         has_price_change: e.hasPriceChange,
         tentative: e.tentative,
+        late: e.late,
         posted: false,
       });
     }
+
+    events.sort((a, b) => a.date.localeCompare(b.date));
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        today: ymd(today),
+        events,
+        possibly_ended: possiblyEnded.map((p) => ({
+          stream_id: p.streamId,
+          label: p.label,
+          kind: p.kind,
+          last_seen: ymd(p.lastSeen),
+          expected: ymd(p.expected),
+          amount: p.amountCents / 100,
+        })),
+      },
+    });
+  } catch (error) {
+    logError("bill_calendar.failed", error, { userId });
+    return NextResponse.json(
+      { success: false, error: "Could not load the bill calendar right now." },
+      { status: 500 },
+    );
   }
-
-  events.sort((a, b) => a.date.localeCompare(b.date));
-
-  return NextResponse.json({ success: true, data: events });
 }
