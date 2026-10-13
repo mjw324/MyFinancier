@@ -31,7 +31,8 @@ function item(e: ForecastItem) {
  * lands". See src/lib/forecast/safe-to-spend.ts for the definition. Takes no
  * parameters; "today" is the viewer's calendar date.
  */
-export async function GET() {
+// The request carries no parameters; accepted only for the handler signature.
+export async function GET(_request?: Request) {
   const session = await getServerSession();
   if (!session?.user) {
     return NextResponse.json(

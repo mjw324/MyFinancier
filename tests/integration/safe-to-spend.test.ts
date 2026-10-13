@@ -62,7 +62,7 @@ const txn = (over: Parameters<typeof makeTxn>[0]) => {
 };
 
 async function getSafe() {
-  const res = await safeToSpendGET();
+  const res = await safeToSpendGET(new Request("http://localhost/api/safe-to-spend"));
   const body = await res.json();
   expect(body.success).toBe(true);
   return body.data;
