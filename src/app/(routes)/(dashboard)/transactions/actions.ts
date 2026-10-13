@@ -9,12 +9,14 @@ import { transactions } from "@/lib/db/schema/transactions";
 import { recurringStreams } from "@/lib/db/schema/recurring";
 import { spendingRules } from "@/lib/db/schema/spending-rules";
 import {
+  ClassificationError,
   classifyTransaction,
   clearTransactionClassification as clearTxClassification,
   clearStreamClassification as clearStreamClassificationCore,
   deleteSpendingRule as deleteSpendingRuleCore,
 } from "@/lib/spending/classify";
 import { detectAndFlagRefunds } from "@/lib/plaid/refunds";
+import { logError } from "@/lib/logging";
 
 const updateSchema = z.object({
   transactionId: z.string().min(1),
@@ -214,10 +216,11 @@ export async function classifyTransactionAction(
       parsed.data.scope,
     );
   } catch (err) {
-    return {
-      success: false as const,
-      error: err instanceof Error ? err.message : "Failed to classify",
-    };
+    if (err instanceof ClassificationError) {
+      return { success: false as const, error: err.message };
+    }
+    logError("transactions.classify-failed", err, { userId });
+    return { success: false as const, error: "Failed to classify" };
   }
 
   revalidatePath("/transactions");

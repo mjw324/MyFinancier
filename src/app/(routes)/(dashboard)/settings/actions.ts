@@ -13,12 +13,7 @@ import { and, eq } from "drizzle-orm";
 import { syncTransactions } from "@/lib/plaid/sync";
 import { fetchRecurringTransactions } from "@/lib/plaid/recurring";
 import { PLAID_ERROR_MESSAGES } from "@/lib/plaid/types";
-// TEMP DEBUG: item/get diagnostic on manual sync
-import { plaidClient } from "@/lib/plaid/client";
-import { decrypt } from "@/lib/utils/encryption";
-// TEMP DEBUG: inspect Plaid-side Item config
-
-
+import { logError, plaidErrorCode } from "@/lib/logging";
 import { upsertUserPreferences } from "@/lib/db/queries/user-preferences";
 
 export async function unlinkPlaidItemAction(plaidItemId: string) {
@@ -90,62 +85,14 @@ export async function syncPlaidItemAction(plaidItemId: string) {
     };
   }
 
-  // TEMP DEBUG: inspect Plaid-side Item config
-  try {
-    const fullItem = await db.query.plaidItems.findFirst({
-      where: eq(plaidItems.id, plaidItemId),
-    });
-    if (fullItem) {
-      const accessToken = decrypt(fullItem.accessToken);
-      const itemGet = await plaidClient.itemGet({ access_token: accessToken });
-      const it = itemGet.data.item;
-      const status = itemGet.data.status;
-      console.log(
-        `[plaid-item-debug] ${JSON.stringify({
-          db_id: fullItem.id,
-          institution_name: fullItem.institutionName,
-          db_status: fullItem.status,
-          db_cursor_present: Boolean(fullItem.cursor),
-          plaid_item_id: it.item_id,
-          institution_id: it.institution_id,
-          webhook: it.webhook,
-          available_products: it.available_products,
-          billed_products: it.billed_products,
-          products: it.products,
-          consented_products: it.consented_products,
-          consent_expiration_time: it.consent_expiration_time,
-          update_type: it.update_type,
-          error: it.error
-            ? {
-                error_type: it.error.error_type,
-                error_code: it.error.error_code,
-                error_message: it.error.error_message,
-              }
-            : null,
-          transactions_last_successful_update:
-            status?.transactions?.last_successful_update ?? null,
-          transactions_last_failed_update:
-            status?.transactions?.last_failed_update ?? null,
-          last_webhook: status?.last_webhook ?? null,
-        })}`,
-      );
-    }
-  } catch (debugErr) {
-    console.error("[plaid-item-debug] /item/get failed:", debugErr);
-  }
-  // TEMP DEBUG: inspect Plaid-side Item config
-
-
-
   try {
     const result = await syncTransactions(plaidItemId);
     try {
       await fetchRecurringTransactions(plaidItemId);
     } catch (err) {
-      console.error(
-        `Recurring fetch failed for item ${plaidItemId}:`,
-        err,
-      );
+      logError("plaid-manual-sync.recurring-failed", err, {
+        plaidItemRowId: plaidItemId,
+      });
     }
     revalidatePath("/settings");
     revalidatePath("/accounts");
@@ -153,7 +100,7 @@ export async function syncPlaidItemAction(plaidItemId: string) {
     revalidatePath("/");
     return { success: true as const, data: result };
   } catch (error) {
-    console.error(`Manual sync failed for item ${plaidItemId}:`, error);
+    logError("plaid-manual-sync.failed", error, { plaidItemRowId: plaidItemId });
     return { success: false as const, error: mapPlaidErrorMessage(error) };
   }
 }
@@ -194,13 +141,9 @@ export async function updateHideTransfersAction(hide: boolean) {
 }
 
 function mapPlaidErrorMessage(error: unknown): string {
-  if (error && typeof error === "object" && "response" in error) {
-    const resp = (error as { response?: { data?: { error_code?: string } } })
-      .response;
-    const code = resp?.data?.error_code;
-    if (code && code in PLAID_ERROR_MESSAGES) {
-      return PLAID_ERROR_MESSAGES[code];
-    }
+  const code = plaidErrorCode(error);
+  if (code && code in PLAID_ERROR_MESSAGES) {
+    return PLAID_ERROR_MESSAGES[code];
   }
   return PLAID_ERROR_MESSAGES.DEFAULT;
 }
