@@ -26,3 +26,6 @@ export const db = new Proxy({} as DB, {
     return typeof value === "function" ? value.bind(real) : value;
   },
 }) as DB;
+
+/** Either the db handle or a transaction handle from db.transaction(). */
+export type DbExecutor = DB | Parameters<Parameters<DB["transaction"]>[0]>[0];

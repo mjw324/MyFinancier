@@ -50,3 +50,8 @@ afterAll(async () => {
   setTestDb(null);
   await pg.close();
 });
+
+/** The PGlite db typed as the app's DbExecutor (structurally compatible at runtime). */
+export function getTestExecutor(): import("@/lib/db").DbExecutor {
+  return testDb as unknown as import("@/lib/db").DbExecutor;
+}
