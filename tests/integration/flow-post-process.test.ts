@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
-import { getTestDb, getTestExecutor } from "../setup/pglite";
+import { getTestDb } from "../setup/pglite";
+import { db as appDb } from "@/lib/db";
 import { user } from "@/lib/db/schema/auth";
 import { plaidItems } from "@/lib/db/schema/plaid";
 import { financialAccounts } from "@/lib/db/schema/accounts";
@@ -157,7 +158,7 @@ describe("postProcessTransactions", () => {
   it("never writes a one-sided pair when a leg changed concurrently (guarded update)", async () => {
     const db = getTestDb();
     await db.update(transactions).set({ transferPairId: "taken" }).where(eq(transactions.id, "arrival"));
-    const applied = await getTestDb().transaction(async (tx) => {
+    const applied = await appDb.transaction(async (tx) => {
       await lockUserFlows(tx, U);
       return applyPairPlan(tx, U, {
         clear: [],
@@ -170,6 +171,5 @@ describe("postProcessTransactions", () => {
     const r = await rows();
     expect(r.get("orphan")!.transferPairId).toBe("gone");
     expect(r.get("arrival")!.transferPairId).toBe("taken");
-    void getTestExecutor;
   });
 });
