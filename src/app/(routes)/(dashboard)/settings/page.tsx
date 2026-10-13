@@ -2,36 +2,30 @@ import { type Metadata } from "next";
 import { getServerSession } from "@/lib/auth/get-session";
 import { getPlaidItemsByUserId } from "@/lib/db/queries/plaid-items";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { PlaidLinkButton } from "@/components/features/accounts/plaid-link-button";
-import { UnlinkAccountDialog } from "@/components/features/settings/unlink-account-dialog";
-import { SyncAccountButton } from "@/components/features/settings/sync-account-button";
+import { LinkedItemRow } from "@/components/features/settings/linked-item-row";
 import { TwoFactorCard } from "@/components/features/settings/two-factor-card";
 import { ResetCustomizationsDialog } from "@/components/features/settings/reset-customizations-dialog";
 import { SpendingRulesSection } from "@/components/features/settings/spending-rules-section";
 import { DisplayPreferencesCard } from "@/components/features/settings/display-preferences-card";
 import { listSpendingRules } from "@/lib/db/queries/spending-rules";
 import { getUserPreferences } from "@/lib/db/queries/user-preferences";
-import { formatRelativeDate } from "@/lib/utils/format";
+import { getUserTimeZone } from "@/lib/utils/user-time";
 
 export const metadata: Metadata = {
   title: "MyFinancier — Settings",
 };
 
-const STATUS_LABELS: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
-  active: { label: "Active", variant: "default" },
-  login_required: { label: "Login Required", variant: "destructive" },
-  pending_expiration: { label: "Expiring Soon", variant: "outline" },
-};
-
 export default async function SettingsPage() {
   const session = await getServerSession();
   const user = session!.user;
-  const [plaidItems, spendingRules, prefs] = await Promise.all([
+  const [plaidItems, spendingRules, prefs, timeZone] = await Promise.all([
     getPlaidItemsByUserId(user.id),
     listSpendingRules(user.id),
     getUserPreferences(user.id),
+    getUserTimeZone(),
   ]);
+  const now = new Date();
 
   return (
     <div className="space-y-6">
@@ -75,65 +69,25 @@ export default async function SettingsPage() {
             </p>
           ) : (
             <div className="divide-y">
-              {plaidItems.map((item) => {
-                const statusInfo = STATUS_LABELS[item.status] ?? {
-                  label: item.status,
-                  variant: "secondary" as const,
-                };
-                const needsReconnect =
-                  item.status === "login_required" ||
-                  item.status === "pending_expiration";
-
-                return (
-                  <div
-                    key={item.id}
-                    className="flex items-center justify-between py-4 first:pt-0 last:pb-0"
-                  >
-                    <div className="space-y-1">
-                      <p className="text-sm font-medium">
-                        {item.institutionName ?? "Unknown Institution"}
-                      </p>
-                      <div className="flex items-center gap-2">
-                        <Badge variant={statusInfo.variant} className="text-xs">
-                          {statusInfo.label}
-                        </Badge>
-                        <span className="text-xs text-muted-foreground">
-                          {item.financialAccounts.length} account
-                          {item.financialAccounts.length !== 1 ? "s" : ""}
-                        </span>
-                        {item.updatedAt && (
-                          <span className="text-xs text-muted-foreground">
-                            · Updated {formatRelativeDate(item.updatedAt)}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {needsReconnect ? (
-                        <PlaidLinkButton
-                          plaidItemId={item.id}
-                          variant="outline"
-                          size="sm"
-                        />
-                      ) : (
-                        <SyncAccountButton
-                          plaidItemId={item.id}
-                          institutionName={
-                            item.institutionName ?? "Unknown Institution"
-                          }
-                        />
-                      )}
-                      <UnlinkAccountDialog
-                        plaidItemId={item.id}
-                        institutionName={
-                          item.institutionName ?? "Unknown Institution"
-                        }
-                        accountCount={item.financialAccounts.length}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
+              {plaidItems.map((item) => (
+                <LinkedItemRow
+                  key={item.id}
+                  now={now}
+                  timeZone={timeZone}
+                  item={{
+                    id: item.id,
+                    institutionName: item.institutionName,
+                    status: item.status,
+                    attention: item.attention,
+                    consentExpiresAt: item.consentExpiresAt,
+                    lastSyncErrorCode: item.lastSyncErrorCode,
+                    lastSuccessfulSyncAt: item.lastSuccessfulSyncAt,
+                    openAccountCount: item.financialAccounts.filter(
+                      (a) => a.closedAt === null,
+                    ).length,
+                  }}
+                />
+              ))}
             </div>
           )}
         </CardContent>
