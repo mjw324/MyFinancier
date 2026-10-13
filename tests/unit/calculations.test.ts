@@ -1,56 +1,45 @@
 import { describe, it, expect } from "vitest";
 import {
-  calculateNetWorth,
+  budgetStatus,
   calculateBudgetPercentage,
+  formatBudgetPercentage,
 } from "@/lib/utils/calculations";
 
-const acct = (currentBalance: string | null) => ({ currentBalance });
-
-describe("calculateNetWorth (in-memory account-list helper)", () => {
-  it("returns 0 for empty input", () => {
-    expect(calculateNetWorth([])).toBe(0);
-  });
-
-  it("sums positive balances", () => {
-    expect(
-      calculateNetWorth([acct("100.00"), acct("250.50"), acct("0.50")]),
-    ).toBe(351);
-  });
-
-  it("supports negative balances (credit cards)", () => {
-    expect(
-      calculateNetWorth([acct("1000.00"), acct("-150.00")]),
-    ).toBe(850);
-  });
-
-  it("treats null balance as 0", () => {
-    expect(calculateNetWorth([acct(null), acct("42.00")])).toBe(42);
-  });
-
-  it("treats unparsable balance as 0 (defensive)", () => {
-    expect(calculateNetWorth([acct("not-a-number"), acct("10.00")])).toBe(10);
-  });
-});
-
 describe("calculateBudgetPercentage", () => {
-  it("returns standard percent", () => {
+  it("returns spent / budgeted as a percentage", () => {
     expect(calculateBudgetPercentage(40, 100)).toBe(40);
+    expect(calculateBudgetPercentage(150, 100)).toBe(150);
   });
 
-  it("returns 0 when budgeted is 0 (avoid divide-by-zero)", () => {
+  it("returns 0 when budgeted is zero or negative", () => {
     expect(calculateBudgetPercentage(50, 0)).toBe(0);
-  });
-
-  it("returns 0 when budgeted is negative (defensive)", () => {
     expect(calculateBudgetPercentage(50, -100)).toBe(0);
   });
 
-  it("rounds to integer percent", () => {
-    // 33.333... → 33
-    expect(calculateBudgetPercentage(100, 300)).toBe(33);
+  it("verify-calcs N13: 100.40 of 100 is over 100% (no rounding to 100)", () => {
+    expect(calculateBudgetPercentage(100.4, 100) > 100).toBe(true);
+  });
+});
+
+describe("budgetStatus (verify-calcs N13)", () => {
+  it("is decided on exact cents", () => {
+    expect(budgetStatus(100.4, 100)).toBe("over");
+    expect(budgetStatus(100, 100)).toBe("near");
+    expect(budgetStatus(100.001, 100)).toBe("near");
+    expect(budgetStatus(84.99, 100)).toBe("under");
+    expect(budgetStatus(85, 100)).toBe("near");
   });
 
-  it("can exceed 100% when overspent", () => {
-    expect(calculateBudgetPercentage(150, 100)).toBe(150);
+  it("a net refund (negative spend) is under budget", () => {
+    expect(budgetStatus(-20, 100)).toBe("under");
+  });
+});
+
+describe("formatBudgetPercentage", () => {
+  it("never shows 100% when under or over", () => {
+    expect(formatBudgetPercentage(99.6, 100)).toBe("99%");
+    expect(formatBudgetPercentage(100.4, 100)).toBe("101%");
+    expect(formatBudgetPercentage(100, 100)).toBe("100%");
+    expect(formatBudgetPercentage(-20, 100)).toBe("0%");
   });
 });
