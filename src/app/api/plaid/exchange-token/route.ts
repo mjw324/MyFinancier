@@ -1,88 +1,87 @@
 import { NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { getServerSession } from "@/lib/auth/get-session";
-import { db } from "@/lib/db";
-import { plaidItems } from "@/lib/db/schema/plaid";
-import { exchangePublicToken } from "@/lib/plaid/link";
-import { syncTransactions } from "@/lib/plaid/sync";
-import { PLAID_ERROR_MESSAGES } from "@/lib/plaid/types";
+import { DuplicateItemError, exchangePublicToken } from "@/lib/plaid/link";
+import { DUPLICATE_ITEM_CODE, plaidErrorMessage } from "@/lib/plaid/types";
 import { logError, plaidErrorCode } from "@/lib/logging";
 
+// Link onSuccess metadata. Untrusted: only used for the pre-exchange duplicate
+// check; the stored institution and accounts come from Plaid.
 const ExchangeTokenSchema = z.object({
-  publicToken: z.string().min(1, "Public token is required"),
-  metadata: z.object({
-    institution: z.object({
-      name: z.string(),
-      institutionId: z.string(),
-    }),
-    accounts: z.array(
-      z.object({
-        id: z.string(),
-        name: z.string(),
-        mask: z.string().nullable(),
-        type: z.string(),
-        subtype: z.string().nullable(),
-      }),
-    ),
-  }),
+  publicToken: z.string().min(1, "Public token is required").max(512),
+  metadata: z
+    .object({
+      institution: z
+        .object({
+          name: z.string().max(256),
+          institutionId: z.string().max(128),
+        })
+        .nullable()
+        .optional(),
+      accounts: z
+        .array(
+          z.object({
+            id: z.string().max(256),
+            name: z.string().max(256),
+            mask: z.string().max(32).nullable().optional(),
+            type: z.string().max(64).optional(),
+            subtype: z.string().max(64).nullable().optional(),
+          }),
+        )
+        .max(200)
+        .default([]),
+    })
+    .default({ accounts: [] }),
 });
 
 export async function POST(request: Request) {
-  try {
-    const session = await getServerSession();
-    if (!session?.user) {
-      return NextResponse.json(
-        { success: false, error: "Unauthorized" },
-        { status: 401 },
-      );
-    }
-
-    const body = await request.json();
-    const parsed = ExchangeTokenSchema.safeParse(body);
-
-    if (!parsed.success) {
-      return NextResponse.json(
-        { success: false, error: "Invalid request body" },
-        { status: 400 },
-      );
-    }
-
-    const { publicToken, metadata } = parsed.data;
-
-    const exchangeResult = await exchangePublicToken(
-      publicToken,
-      session.user.id,
-      metadata,
+  const session = await getServerSession();
+  if (!session?.user) {
+    return NextResponse.json(
+      { success: false, error: "Unauthorized" },
+      { status: 401 },
     );
+  }
 
-    // Trigger initial sync non-blocking
-    const newItem = await db.query.plaidItems.findFirst({
-      where: eq(plaidItems.itemId, exchangeResult.itemId),
+  const body = await request.json().catch(() => null);
+  const parsed = ExchangeTokenSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { success: false, error: "Invalid request body" },
+      { status: 400 },
+    );
+  }
+
+  const { publicToken, metadata } = parsed.data;
+
+  try {
+    const data = await exchangePublicToken(publicToken, session.user.id, {
+      institution: metadata.institution?.institutionId
+        ? metadata.institution
+        : null,
+      accounts: metadata.accounts.map((a) => ({ ...a, mask: a.mask ?? null })),
     });
-
-    if (newItem) {
-      syncTransactions(newItem.id).catch((error) => {
-        logError("plaid-exchange.initial-sync-failed", error, {
-          plaidItemRowId: newItem.id,
-        });
-      });
-    }
-
-    return NextResponse.json({ success: true, data: exchangeResult });
+    // The new Item carries a pending sync request (sync_requested_at); the
+    // sync worker drains it. There is no inline sync any more: Plaid has no
+    // transactions ready this early, so it only ever saved an empty cursor.
+    return NextResponse.json({ success: true, data });
   } catch (error) {
+    if (error instanceof DuplicateItemError) {
+      const bank = error.institutionName ?? "This bank";
+      return NextResponse.json(
+        {
+          success: false,
+          error: `${bank} is already connected. Reopening that connection so you can update it or add accounts.`,
+          code: DUPLICATE_ITEM_CODE,
+          existingPlaidItemId: error.existingPlaidItemId,
+        },
+        { status: 409 },
+      );
+    }
     logError("plaid-exchange.failed", error);
     return NextResponse.json(
-      { success: false, error: mapPlaidErrorMessage(error) },
+      { success: false, error: plaidErrorMessage(plaidErrorCode(error)) },
       { status: 500 },
     );
   }
-}
-
-function mapPlaidErrorMessage(error: unknown): string {
-  const code = plaidErrorCode(error);
-  if (code && code in PLAID_ERROR_MESSAGES) {
-    return PLAID_ERROR_MESSAGES[code];
-  }
-  return PLAID_ERROR_MESSAGES.DEFAULT;
 }

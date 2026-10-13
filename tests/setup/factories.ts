@@ -105,6 +105,10 @@ type PlaidItemRow = {
   status: string;
   createdAt: Date;
   updatedAt: Date;
+  attention?: string | null;
+  consentExpiresAt?: Date | null;
+  lastSyncErrorCode?: string | null;
+  lastSuccessfulSyncAt?: Date | null;
 };
 
 type AccountRow = {

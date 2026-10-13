@@ -39,5 +39,16 @@ export const plaidItems = pgTable(
       .defaultNow()
       .$onUpdate(() => new Date()),
   },
-  (table) => [index("plaid_items_user_id_idx").on(table.userId)],
+  (table) => [
+    index("plaid_items_user_id_idx").on(table.userId),
+    // Deliberately NO unique index on (user_id, institution_id). A user may
+    // hold several logins at one bank (joint, business), which Plaid calls
+    // legitimate; "one Item per institution" is "not recommended as the
+    // primary means of detecting duplicate Items"
+    // (https://plaid.com/docs/link/duplicate-items/). Duplicates are caught
+    // in src/lib/plaid/link.ts by institution + account name + mask, before
+    // the public token is exchanged, and again under a per-user advisory lock
+    // before the insert. The production-only partial index
+    // plaid_items_user_institution_active_idx must be dropped by migration.
+  ],
 ).enableRLS();
