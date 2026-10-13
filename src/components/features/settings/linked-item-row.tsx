@@ -16,6 +16,8 @@ export type LinkedItemRowProps = {
     institutionName: string | null;
     lastSuccessfulSyncAt: Date | null;
     openAccountCount: number;
+    /** Masks of the open accounts, to tell two logins at one bank apart. */
+    accountMasks?: string[];
   };
   /** Viewer's IANA time zone, for the consent-expiry date. */
   timeZone: string;
@@ -51,6 +53,11 @@ function issueDetail(issue: ItemIssue, timeZone: string): string | null {
 export function LinkedItemRow({ item, timeZone, now = new Date() }: LinkedItemRowProps) {
   const health = getItemHealth(item, now);
   const name = item.institutionName ?? "Unknown Institution";
+  const masks = item.accountMasks ?? [];
+  const maskHint =
+    masks.length === 0
+      ? ""
+      : ` (${masks.slice(0, 3).map((m) => `••${m}`).join(", ")}${masks.length > 3 ? ` +${masks.length - 3}` : ""})`;
   const details = health.issues
     .map((issue) => issueDetail(issue, timeZone))
     .filter((d): d is string => d !== null);
@@ -78,6 +85,7 @@ export function LinkedItemRow({ item, timeZone, now = new Date() }: LinkedItemRo
         </div>
         <p className="text-xs text-muted-foreground">
           {item.openAccountCount} account{item.openAccountCount !== 1 ? "s" : ""}
+          {maskHint}
           {" · "}
           {item.lastSuccessfulSyncAt
             ? `Last synced ${formatRelativeDate(item.lastSuccessfulSyncAt)}`
@@ -89,7 +97,7 @@ export function LinkedItemRow({ item, timeZone, now = new Date() }: LinkedItemRo
           </p>
         ))}
       </div>
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2 sm:shrink-0 sm:justify-end">
         {health.primaryAction && (
           <PlaidLinkButton
             plaidItemId={item.id}

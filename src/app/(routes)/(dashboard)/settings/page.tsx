@@ -85,6 +85,10 @@ export default async function SettingsPage() {
                     openAccountCount: item.financialAccounts.filter(
                       (a) => a.closedAt === null,
                     ).length,
+                    accountMasks: item.financialAccounts
+                      .filter((a) => a.closedAt === null && a.mask)
+                      .map((a) => a.mask as string)
+                      .sort(),
                   }}
                 />
               ))}
