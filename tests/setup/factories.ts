@@ -120,6 +120,9 @@ type AccountRow = {
   availableBalance: string | null;
   isoCurrencyCode: string | null;
   lastSyncedAt: Date | null;
+  mask?: string | null;
+  creditLimit?: string | null;
+  closedAt?: Date | null;
 };
 
 type TxnRow = {
@@ -141,6 +144,8 @@ type TxnRow = {
   spendingTypeSource?: string | null;
   normalizedMerchant?: string | null;
   nameSignature?: string | null;
+  pendingTransactionId?: string | null;
+  authorizedDate?: Date | null;
   isTransfer?: boolean;
   transferPairId?: string | null;
   isRefund?: boolean;

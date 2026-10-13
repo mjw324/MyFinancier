@@ -5,7 +5,7 @@
  * stat cards beside it use the calendar month, so two numbers on the same card
  * describe different spans. Worse, comparing a partial current month against a
  * complete prior month always shows a fall, and for someone paid biweekly the
- * three-payday months (Oct 2025, May 2026 for the reference user) read as +50%
+ * three-payday months read as +50%
  * income spikes that never happened.
  *
  * Every period this module returns is labelled and carries the metadata a
@@ -15,7 +15,6 @@
  * UTC-midnight timestamps, and the server runs in UTC while viewers do not, so
  * local getters would shift a day.
  *
- * See docs/audits/analytics-model-spec-2026-09-02.md section 4.2.
  */
 
 export type PeriodKind = "calendar" | "rolling" | "paycheck";

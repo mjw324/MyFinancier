@@ -3,6 +3,7 @@ import { getServerSession } from "@/lib/auth/get-session";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { DashboardSidebar } from "@/components/layout/dashboard-sidebar";
 import { DashboardHeader } from "@/components/layout/dashboard-header";
+import { TimeZoneSync } from "@/components/layout/time-zone-sync";
 
 export default async function DashboardLayout({
   children,
@@ -14,6 +15,7 @@ export default async function DashboardLayout({
 
   return (
     <SidebarProvider>
+      <TimeZoneSync />
       <DashboardSidebar user={session.user} />
       <SidebarInset>
         <DashboardHeader />

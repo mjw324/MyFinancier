@@ -12,7 +12,9 @@ export function setTestDb(testDb: DB | null) {
 
 function getDb(): DB {
   if (_db) return _db;
-  const client = postgres(process.env.DATABASE_URL!);
+  // prepare: false — DATABASE_URL may point at Supabase's transaction-mode
+  // pooler, which does not support named prepared statements.
+  const client = postgres(process.env.DATABASE_URL!, { prepare: false });
   _db = drizzle(client, { schema });
   return _db;
 }

@@ -46,10 +46,29 @@ export const transactions = pgTable(
     transferPairId: text("transfer_pair_id"),
     isRefund: boolean("is_refund").notNull().default(false),
     refundSource: text("refund_source"),
+    // Flow classification — the single source every aggregate reads. See
+    // src/lib/analytics/flow.ts. is_transfer / is_refund are derived from it.
+    flowClass: text("flow_class"),
+    flowClassSource: text("flow_class_source"),
+    counterpartyKey: text("counterparty_key"),
+    // Plaid links a posted transaction to the pending one it replaces.
+    pendingTransactionId: text("pending_transaction_id"),
+    authorizedDate: timestamp("authorized_date", { mode: "date" }),
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow(),
   },
   (table) => [
     index("transactions_user_id_idx").on(table.userId),
+    index("transactions_user_date_idx").on(table.userId, table.date),
+    index("transactions_account_id_idx").on(table.accountId),
+    index("transactions_user_flow_class_date_idx").on(
+      table.userId,
+      table.flowClass,
+      table.date,
+    ),
+    index("transactions_user_counterparty_idx").on(
+      table.userId,
+      table.counterpartyKey,
+    ),
     index("transactions_date_idx").on(table.date),
     index("transactions_recurring_stream_id_idx").on(table.recurringStreamId),
     index("transactions_normalized_merchant_idx").on(table.normalizedMerchant),
@@ -67,6 +86,10 @@ export const transactions = pgTable(
     check(
       "transactions_refund_source_check",
       sql`${table.refundSource} IS NULL OR ${table.refundSource} IN ('auto','manual')`,
+    ),
+    check(
+      "transactions_flow_class_source_check",
+      sql`${table.flowClassSource} IS NULL OR ${table.flowClassSource} IN ('auto','manual')`,
     ),
     check(
       "transactions_spending_type_check",
