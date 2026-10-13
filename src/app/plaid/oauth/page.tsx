@@ -1,81 +1,98 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { usePlaidLink } from "react-plaid-link";
+import {
+  usePlaidLink,
+  type PlaidLinkError,
+  type PlaidLinkOnSuccessMetadata,
+} from "react-plaid-link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
+import {
+  clearLinkSession,
+  completeLinkSession,
+  loadLinkSession,
+  startLinkSession,
+  successMessage,
+  type LinkSession,
+} from "@/components/features/accounts/plaid-link-flow";
+
+type LaunchState = {
+  session: LinkSession;
+  /** Set when resuming the session Plaid redirected back from. */
+  receivedRedirectUri?: string;
+};
+
+function safeReturnTo(path: string | undefined): string {
+  return path && path.startsWith("/") && !path.startsWith("//") ? path : "/accounts";
+}
 
 export default function PlaidOAuthReturnPage() {
   const router = useRouter();
-  const [token, setToken] = useState<string | null>(null);
-  const [receivedRedirectUri, setReceivedRedirectUri] = useState<string | null>(
-    null,
-  );
+  const [launch, setLaunch] = useState<LaunchState | null>(null);
 
   useEffect(() => {
-    const stored = sessionStorage.getItem("plaid_link_token");
-    if (!stored) {
-      toast.error("Link session expired. Please start over.");
+    const session = loadLinkSession();
+    if (!session) {
+      toast.error("Your bank connection session expired. Please start again.");
       router.replace("/accounts");
       return;
     }
-    setToken(stored);
-    setReceivedRedirectUri(window.location.href);
+    setLaunch({ session, receivedRedirectUri: window.location.href });
   }, [router]);
 
-  const onSuccess = useCallback(
-    async (publicToken: string | null, metadata: any) => {
-      if (!publicToken) {
-        toast.error("Failed to link account. Missing token.");
-        sessionStorage.removeItem("plaid_link_token");
-        router.replace("/accounts");
-        return;
-      }
-      try {
-        const response = await fetch("/api/plaid/exchange-token", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            publicToken,
-            metadata: {
-              institution: {
-                name: metadata.institution?.name ?? "",
-                institutionId: metadata.institution?.institution_id ?? "",
-              },
-              accounts: (metadata.accounts ?? []).map((a: any) => ({
-                id: a.id,
-                name: a.name,
-                mask: a.mask,
-                type: a.type,
-                subtype: a.subtype,
-              })),
-            },
-          }),
-        });
-        const data = await response.json();
-        if (data.success) {
-          toast.success("Account linked successfully!");
-        } else {
-          toast.error(data.error || "Failed to link account");
-        }
-      } catch {
-        toast.error("Failed to link account. Please try again.");
-      } finally {
-        sessionStorage.removeItem("plaid_link_token");
-        router.replace("/accounts");
-      }
+  const done = useCallback(
+    (session: LinkSession) => {
+      clearLinkSession();
+      router.replace(safeReturnTo(session.returnTo));
     },
     [router],
   );
 
-  const onExit = useCallback(
-    (error: any) => {
-      sessionStorage.removeItem("plaid_link_token");
-      if (error) toast.error("Connection was interrupted. Please try again.");
-      router.replace("/accounts");
+  const onSuccess = useCallback(
+    async (
+      session: LinkSession,
+      publicToken: string | null,
+      metadata: PlaidLinkOnSuccessMetadata,
+    ) => {
+      const outcome = await completeLinkSession(session, publicToken, metadata);
+
+      if (outcome.kind === "duplicate") {
+        // Already connected: open update mode (with account selection) on the
+        // existing connection. This is a fresh Link session, so it starts
+        // without receivedRedirectUri; if the bank uses OAuth again, Plaid
+        // redirects back here and the stored session resumes it.
+        toast.info(outcome.message);
+        const next = await startLinkSession({
+          plaidItemId: outcome.existingPlaidItemId,
+          accountSelection: true,
+          returnTo: session.returnTo,
+        });
+        if (next.ok) {
+          setLaunch({ session: next.session });
+          return;
+        }
+        toast.error(next.message);
+        done(session);
+        return;
+      }
+
+      if (outcome.kind === "error") toast.error(outcome.message);
+      else toast.success(successMessage(outcome));
+      done(session);
     },
-    [router],
+    [done],
+  );
+
+  const onExit = useCallback(
+    (session: LinkSession, error: PlaidLinkError | null) => {
+      if (error) {
+        toast.error("The bank connection was interrupted. Please try again.");
+      }
+      done(session);
+    },
+    [done],
   );
 
   return (
@@ -84,10 +101,10 @@ export default function PlaidOAuthReturnPage() {
         <Loader2 className="size-6 animate-spin" />
         <p>Completing bank connection…</p>
       </div>
-      {token && receivedRedirectUri && (
+      {launch && (
         <PlaidOAuthLauncher
-          token={token}
-          receivedRedirectUri={receivedRedirectUri}
+          key={launch.session.token + (launch.receivedRedirectUri ? ":oauth" : "")}
+          launch={launch}
           onSuccess={onSuccess}
           onExit={onExit}
         />
@@ -97,21 +114,24 @@ export default function PlaidOAuthReturnPage() {
 }
 
 function PlaidOAuthLauncher({
-  token,
-  receivedRedirectUri,
+  launch,
   onSuccess,
   onExit,
 }: {
-  token: string;
-  receivedRedirectUri: string;
-  onSuccess: (publicToken: string | null, metadata: any) => void;
-  onExit: (error: any) => void;
+  launch: LaunchState;
+  onSuccess: (
+    session: LinkSession,
+    publicToken: string | null,
+    metadata: PlaidLinkOnSuccessMetadata,
+  ) => void;
+  onExit: (session: LinkSession, error: PlaidLinkError | null) => void;
 }) {
+  const { session, receivedRedirectUri } = launch;
   const { open, ready } = usePlaidLink({
-    token,
-    receivedRedirectUri,
-    onSuccess,
-    onExit,
+    token: session.token,
+    ...(receivedRedirectUri ? { receivedRedirectUri } : {}),
+    onSuccess: (publicToken, metadata) => onSuccess(session, publicToken, metadata),
+    onExit: (error) => onExit(session, error),
   });
 
   useEffect(() => {
