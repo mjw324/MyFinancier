@@ -28,7 +28,10 @@ import {
 
 const A = "user_a";
 const B = "user_b";
+// `categoryId` is the legacy field (ignored now). It is passed so that, on the
+// old code, validation reaches the amount/date checks these tests target.
 const valid = {
+  categoryId: "cat_own",
   categoryKey: "FOOD_AND_DRINK",
   amount: "250",
   period: "monthly" as const,
@@ -50,6 +53,7 @@ beforeEach(async () => {
     makeAccount({ id: "acct_a", userId: A, plaidItemId: "pi_a", plaidAccountId: "pa_a" }),
     makeAccount({ id: "acct_b", userId: B, plaidItemId: "pi_b", plaidAccountId: "pa_b" }),
   ]);
+  await db.insert(categories).values({ id: "cat_own", userId: A, name: "Food" });
   await db.insert(transactions).values([
     makeTxn({ id: "ta", userId: A, accountId: "acct_a", plaidTransactionId: "pta", customCategory: "Groceries" }),
     makeTxn({ id: "tb", userId: B, accountId: "acct_b", plaidTransactionId: "ptb", customCategory: "Other user's label" }),
@@ -119,12 +123,9 @@ describe("createBudgetAction — validation (verify-calcs 6.4)", () => {
 describe("budget ownership (verify-calcs N5)", () => {
   it("a budget on another user's category is rejected and reveals nothing", async () => {
     await getTestDb().insert(categories).values({ id: "cat_secret", userId: B, name: "Other user's label" });
-    const res = await createBudgetAction({
-      ...valid,
-      // Both the legacy id and the other user's custom label are refused.
-      categoryId: "cat_secret",
-      categoryKey: "Other user's label",
-    } as typeof valid & { categoryId: string });
+    // Both the legacy id and the other user's custom label are refused.
+    const input = { ...valid, categoryId: "cat_secret", categoryKey: "Other user's label" };
+    const res = await createBudgetAction(input);
     expect(res.success).toBe(false);
     expect(await rows()).toHaveLength(0);
   });
