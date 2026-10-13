@@ -56,7 +56,7 @@ export async function unlinkPlaidItemAction(plaidItemId: string) {
 
   revalidatePath("/settings");
   revalidatePath("/accounts");
-  revalidatePath("/");
+  revalidatePath("/dashboard");
   return { success: true as const };
 }
 
@@ -97,7 +97,7 @@ export async function syncPlaidItemAction(plaidItemId: string) {
     revalidatePath("/settings");
     revalidatePath("/accounts");
     revalidatePath("/transactions");
-    revalidatePath("/");
+    revalidatePath("/dashboard");
     return { success: true as const, data: result };
   } catch (error) {
     logError("plaid-manual-sync.failed", error, { plaidItemRowId: plaidItemId });
@@ -123,7 +123,7 @@ export async function resetTransactionCustomizationsAction() {
 
   revalidatePath("/transactions");
   revalidatePath("/settings");
-  revalidatePath("/");
+  revalidatePath("/dashboard");
   return { success: true as const };
 }
 
