@@ -175,15 +175,15 @@ describe("yearToDate and trailingMonths", () => {
 });
 
 describe("inferPaycheckCadence", () => {
-  // The reference user's real deposit history: biweekly, with a December bonus
+  // A synthetic deposit history: biweekly, with a December bonus
   // that makes the mean useless.
   const biweekly = [
-    { date: new Date("2026-06-12T00:00:00Z"), amount: -2565.57 },
-    { date: new Date("2026-06-26T00:00:00Z"), amount: -2565.49 },
-    { date: new Date("2026-07-10T00:00:00Z"), amount: -2565.72 },
-    { date: new Date("2026-07-24T00:00:00Z"), amount: -2565.72 },
-    { date: new Date("2026-08-07T00:00:00Z"), amount: -2565.72 },
-    { date: new Date("2026-08-21T00:00:00Z"), amount: -2565.72 },
+    { date: new Date("2026-06-12T00:00:00Z"), amount: -2412.57 },
+    { date: new Date("2026-06-26T00:00:00Z"), amount: -2412.49 },
+    { date: new Date("2026-07-10T00:00:00Z"), amount: -2412.30 },
+    { date: new Date("2026-07-24T00:00:00Z"), amount: -2412.30 },
+    { date: new Date("2026-08-07T00:00:00Z"), amount: -2412.30 },
+    { date: new Date("2026-08-21T00:00:00Z"), amount: -2412.30 },
   ];
 
   it("detects a biweekly cadence", () => {
@@ -196,10 +196,10 @@ describe("inferPaycheckCadence", () => {
   it("reports the median deposit so a bonus cannot distort it", () => {
     const withBonus = [
       ...biweekly,
-      { date: new Date("2025-12-12T00:00:00Z"), amount: -20169.56 },
+      { date: new Date("2025-12-12T00:00:00Z"), amount: -21000.00 },
     ];
     const c = inferPaycheckCadence(withBonus)!;
-    expect(c.medianAmount).toBeCloseTo(2565.72, 2);
+    expect(c.medianAmount).toBeCloseTo(2412.30, 2);
     const mean =
       withBonus.reduce((s, e) => s + Math.abs(e.amount), 0) / withBonus.length;
     expect(mean).toBeGreaterThan(5000);
@@ -231,10 +231,10 @@ describe("inferPaycheckCadence", () => {
 
 describe("expectedPaychecks", () => {
   const cadence = inferPaycheckCadence([
-    { date: new Date("2026-07-10T00:00:00Z"), amount: -2565 },
-    { date: new Date("2026-07-24T00:00:00Z"), amount: -2565 },
-    { date: new Date("2026-08-07T00:00:00Z"), amount: -2565 },
-    { date: new Date("2026-08-21T00:00:00Z"), amount: -2565 },
+    { date: new Date("2026-07-10T00:00:00Z"), amount: -2412 },
+    { date: new Date("2026-07-24T00:00:00Z"), amount: -2412 },
+    { date: new Date("2026-08-07T00:00:00Z"), amount: -2412 },
+    { date: new Date("2026-08-21T00:00:00Z"), amount: -2412 },
   ])!;
 
   it("expects two paychecks in a typical month", () => {
@@ -255,9 +255,9 @@ describe("expectedPaychecks", () => {
 describe("paycheckPeriod", () => {
   it("spans from the last paycheck to the next expected one", () => {
     const events = [
-      { date: new Date("2026-07-24T00:00:00Z"), amount: -2565.72 },
-      { date: new Date("2026-08-07T00:00:00Z"), amount: -2565.72 },
-      { date: new Date("2026-08-21T00:00:00Z"), amount: -2565.72 },
+      { date: new Date("2026-07-24T00:00:00Z"), amount: -2412.30 },
+      { date: new Date("2026-08-07T00:00:00Z"), amount: -2412.30 },
+      { date: new Date("2026-08-21T00:00:00Z"), amount: -2412.30 },
     ];
     const p = paycheckPeriod(events, new Date("2026-08-25T00:00:00Z"))!;
     expect(iso(p.start)).toBe("2026-08-21");
@@ -268,9 +268,9 @@ describe("paycheckPeriod", () => {
 
   it("ignores deposits in the future when picking the anchor", () => {
     const events = [
-      { date: new Date("2026-08-07T00:00:00Z"), amount: -2565.72 },
-      { date: new Date("2026-08-21T00:00:00Z"), amount: -2565.72 },
-      { date: new Date("2026-09-04T00:00:00Z"), amount: -2565.72 },
+      { date: new Date("2026-08-07T00:00:00Z"), amount: -2412.30 },
+      { date: new Date("2026-08-21T00:00:00Z"), amount: -2412.30 },
+      { date: new Date("2026-09-04T00:00:00Z"), amount: -2412.30 },
     ];
     const p = paycheckPeriod(events, new Date("2026-08-25T00:00:00Z"))!;
     expect(iso(p.start)).toBe("2026-08-21");

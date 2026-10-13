@@ -43,7 +43,7 @@ beforeEach(async () => {
       userId: USER,
       accountId: "acct",
       plaidTransactionId: "p1",
-      amount: "1014.12",
+      amount: "846.20",
       category: "GENERAL_MERCHANDISE",
       date: new Date("2026-08-05T00:00:00Z"),
     }),
@@ -54,7 +54,7 @@ beforeEach(async () => {
       userId: USER,
       accountId: "acct",
       plaidTransactionId: "p2",
-      amount: "-1014.12",
+      amount: "-846.20",
       category: "GENERAL_MERCHANDISE",
       date: new Date("2026-08-06T00:00:00Z"),
       isRefund: true,
@@ -74,7 +74,7 @@ beforeEach(async () => {
       userId: USER,
       accountId: "acct",
       plaidTransactionId: "p4",
-      amount: "-2565.72",
+      amount: "-2412.30",
       category: "INCOME",
       date: new Date("2026-08-07T00:00:00Z"),
     }),
@@ -102,7 +102,7 @@ describe("dashboard and transactions page agree", () => {
     });
     const dashboard = aggregateIncomeAndExpenses(await loadMonth());
 
-    // 1014.12 spent, 1014.12 refunded, 55.30 food => 55.30.
+    // 846.20 spent, 846.20 refunded, 55.30 food => 55.30.
     expect(stats.expensesThisMonth).toBeCloseTo(55.3, 2);
     expect(totals.expenses).toBeCloseTo(55.3, 2);
     expect(dashboard.expenses).toBeCloseTo(55.3, 2);
@@ -117,14 +117,14 @@ describe("dashboard and transactions page agree", () => {
     const dashboard = aggregateIncomeAndExpenses(await loadMonth());
 
     // The refund must not appear as income anywhere.
-    expect(stats.incomeThisMonth).toBeCloseTo(2565.72, 2);
-    expect(totals.income).toBeCloseTo(2565.72, 2);
-    expect(dashboard.income).toBeCloseTo(2565.72, 2);
+    expect(stats.incomeThisMonth).toBeCloseTo(2412.30, 2);
+    expect(totals.income).toBeCloseTo(2412.30, 2);
+    expect(dashboard.income).toBeCloseTo(2412.30, 2);
   });
 
   it("keeps the refund out of the spending-type income figure too", async () => {
     const byType = aggregateBySpendingType(await loadMonth());
-    expect(byType.income).toBeCloseTo(2565.72, 2);
+    expect(byType.income).toBeCloseTo(2412.30, 2);
     // The refund nets against the bucket it was spent from.
     expect(byType.totalExpenses).toBeCloseTo(55.3, 2);
   });

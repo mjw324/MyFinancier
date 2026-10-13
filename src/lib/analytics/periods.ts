@@ -235,9 +235,9 @@ export interface PaycheckCadence {
 }
 
 /**
- * Infers pay cadence from deposit history. Uses medians throughout: this
- * user's mean deposit is $3,199 because of a single $20,170 December bonus,
- * while the median is $2,565.72, which is the actual paycheck.
+ * Infers pay cadence from deposit history. Uses medians throughout: a single
+ * large bonus can drag the mean far above a typical paycheck, while the median
+ * stays on the actual paycheck amount.
  */
 export function inferPaycheckCadence(
   events: PaycheckEvent[],
