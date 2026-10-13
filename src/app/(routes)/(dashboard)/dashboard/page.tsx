@@ -1,38 +1,33 @@
 import { type Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getServerSession } from "@/lib/auth/get-session";
-import {
-  getOverviewStats,
-  getBudgetProgress,
-} from "@/lib/db/queries/overview";
-import { DashboardContent } from "@/components/features/overview/dashboard-content";
+import { getBudgetProgress } from "@/lib/db/queries/overview";
 import { BudgetOverview } from "@/components/features/overview/budget-overview";
-import { getDashboardDataByRange } from "./actions";
+import { RecentTransactions } from "@/components/features/overview/recent-transactions";
+import { getUserToday } from "@/lib/utils/user-time";
+import { toDateParam } from "@/lib/utils/date-ranges";
+import { loadRecent } from "./data";
 
 export const metadata: Metadata = {
   title: "MyFinancier — Dashboard",
 };
 
+// Interim page while the cash-flow dashboard is assembled (next commit).
 export default async function OverviewPage() {
   const session = await getServerSession();
   if (!session?.user) redirect("/signin");
   const userId = session.user.id;
+  const today = toDateParam(await getUserToday());
 
-  const [stats, dashboardResult, budgetProgress] = await Promise.all([
-    getOverviewStats(userId),
-    getDashboardDataByRange("month"),
+  const [recent, budgetProgress] = await Promise.all([
+    loadRecent(userId),
     getBudgetProgress(userId),
   ]);
 
   return (
-    <DashboardContent
-      netWorth={stats.netWorth}
-      projectedNetWorth={stats.projectedNetWorth}
-      pendingIncomeThisMonth={stats.pendingIncomeThisMonth}
-      pendingExpensesThisMonth={stats.pendingExpensesThisMonth}
-      initialRangeData={dashboardResult.success ? dashboardResult.data : null}
-    >
+    <div className="flex flex-col gap-6" data-today={today}>
+      <RecentTransactions transactions={recent} />
       <BudgetOverview budgets={budgetProgress} />
-    </DashboardContent>
+    </div>
   );
 }

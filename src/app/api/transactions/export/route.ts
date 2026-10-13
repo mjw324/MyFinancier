@@ -9,30 +9,15 @@ import {
 import { getAccountsByUserId } from "@/lib/db/queries/accounts";
 import { getUserPreferences } from "@/lib/db/queries/user-preferences";
 import { buildTransactionsWorkbook } from "@/lib/transactions/export";
+import { parseTransactionQuery } from "@/lib/transactions/query";
+import { logError } from "@/lib/logging";
 
 // `searchTransactions` defaults to a paginated 25-row window. The export needs
 // every matching row, so we pass an effectively unbounded limit. Personal
 // accounts will not approach this number.
 const EXPORT_ROW_CEILING = 1_000_000;
 
-const QuerySchema = z.object({
-  mode: z.enum(["standard", "detailed"]).default("standard"),
-  search: z.string().optional(),
-  account: z.string().optional(),
-  category: z.string().optional(),
-  from: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/)
-    .optional(),
-  to: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/)
-    .optional(),
-  recurring: z.enum(["recurring", "onetime"]).optional(),
-  spendingType: z
-    .enum(["necessary", "discretionary", "unclassified"])
-    .optional(),
-});
+const ModeSchema = z.enum(["standard", "detailed"]).catch("standard");
 
 export async function GET(request: Request) {
   const session = await getServerSession();
@@ -45,69 +30,81 @@ export async function GET(request: Request) {
   const userId = session.user.id;
 
   const { searchParams } = new URL(request.url);
-  const parsed = QuerySchema.safeParse(Object.fromEntries(searchParams));
-  if (!parsed.success) {
+  const raw = Object.fromEntries(searchParams);
+  const mode = ModeSchema.parse(raw.mode);
+  // Same parser as the transactions page, so the file holds exactly the rows
+  // (and totals) the user was looking at.
+  const query = parseTransactionQuery(raw);
+  if (query.invalid.length > 0) {
     return NextResponse.json(
-      { success: false, error: "Invalid query parameters" },
+      {
+        success: false,
+        error: `Invalid query parameters: ${query.invalid.join(", ")}`,
+      },
       { status: 400 },
     );
   }
-  const q = parsed.data;
 
-  const prefs = await getUserPreferences(userId);
+  try {
+    const prefs = await getUserPreferences(userId);
+    const filters: TransactionFilters = {
+      ...query.filters,
+      includeTransfers: !prefs.hideTransfersFromList,
+    };
 
-  const filters: TransactionFilters = {
-    search: q.search || undefined,
-    accountId: q.account || undefined,
-    category: q.category || undefined,
-    startDate: q.from ? new Date(q.from) : undefined,
-    endDate: q.to ? new Date(q.to) : undefined,
-    recurring: q.recurring,
-    spendingType: q.spendingType,
-    includeTransfers: !prefs.hideTransfersFromList,
-  };
+    const [rows, totals, accounts] = await Promise.all([
+      searchTransactions(userId, filters, {
+        limit: EXPORT_ROW_CEILING,
+        offset: 0,
+      }),
+      getTransactionTotals(userId, filters),
+      filters.accountId ? getAccountsByUserId(userId) : Promise.resolve([]),
+    ]);
 
-  const [rows, totals, accounts] = await Promise.all([
-    searchTransactions(userId, filters, {
-      limit: EXPORT_ROW_CEILING,
-      offset: 0,
-    }),
-    getTransactionTotals(userId, filters),
-    q.account ? getAccountsByUserId(userId) : Promise.resolve([]),
-  ]);
+    const accountName = filters.accountId
+      ? accounts.find((a) => a.id === filters.accountId)?.name
+      : undefined;
 
-  const accountName = q.account
-    ? accounts.find((a) => a.id === q.account)?.name
-    : undefined;
+    const generatedAt = new Date();
+    const buffer = await buildTransactionsWorkbook({
+      mode,
+      filterDisplay: {
+        search: filters.search,
+        accountName,
+        category: filters.category,
+        bucket: filters.bucket,
+        flowClass: filters.flowClass,
+        flowGroup: filters.flowGroup,
+        counterparty: filters.counterparty,
+        cost: filters.cost,
+        startDate: filters.startDate,
+        endDate: filters.endDate,
+        recurring: filters.recurring,
+        spendingType: filters.spendingType,
+        includeTransfers: filters.includeTransfers,
+      },
+      rows,
+      totals,
+      generatedAt,
+    });
 
-  const generatedAt = new Date();
-  const buffer = await buildTransactionsWorkbook({
-    mode: q.mode,
-    filterDisplay: {
-      search: filters.search,
-      accountName,
-      category: filters.category,
-      startDate: filters.startDate,
-      endDate: filters.endDate,
-      recurring: filters.recurring,
-      spendingType: filters.spendingType,
-      includeTransfers: filters.includeTransfers,
-    },
-    rows,
-    totals,
-    generatedAt,
-  });
+    const datePart = generatedAt.toISOString().slice(0, 10);
+    const filename = `transactions_${datePart}${mode === "detailed" ? "_detailed" : ""}.xlsx`;
 
-  const datePart = generatedAt.toISOString().slice(0, 10);
-  const filename = `transactions_${datePart}${q.mode === "detailed" ? "_detailed" : ""}.xlsx`;
-
-  return new Response(new Uint8Array(buffer), {
-    status: 200,
-    headers: {
-      "Content-Type":
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "Content-Disposition": `attachment; filename="${filename}"`,
-      "Cache-Control": "no-store",
-    },
-  });
+    return new Response(new Uint8Array(buffer), {
+      status: 200,
+      headers: {
+        "Content-Type":
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "Content-Disposition": `attachment; filename="${filename}"`,
+        "Cache-Control": "no-store",
+      },
+    });
+  } catch (err) {
+    logError("transactions.export_failed", err, { userId });
+    return NextResponse.json(
+      { success: false, error: "Export failed. Please try again." },
+      { status: 500 },
+    );
+  }
 }

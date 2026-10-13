@@ -3,12 +3,25 @@ import { getTestDb } from "../setup/pglite";
 import { user } from "@/lib/db/schema/auth";
 import { plaidItems } from "@/lib/db/schema/plaid";
 import { financialAccounts } from "@/lib/db/schema/accounts";
-import { getOverviewStats } from "@/lib/db/queries/overview";
+import { transactions } from "@/lib/db/schema/transactions";
+import { getRecentTransactions } from "@/lib/db/queries/overview";
+import { getBalanceSummary } from "@/lib/db/queries/accounts";
 import {
   makeUser,
   makePlaidItem,
   makeAccount,
+  makeTxn,
 } from "../setup/factories";
+
+/** What the dashboard balance card shows (getBalanceSummary, W4-owned). */
+async function getOverviewStats(userId: string) {
+  const summary = await getBalanceSummary(userId);
+  const db = getTestDb();
+  const accounts = await db.query.financialAccounts.findMany({
+    where: (a, { eq }) => eq(a.userId, userId),
+  });
+  return { netWorth: summary.netWorth, accountCount: accounts.length, summary };
+}
 
 const USER_A = "user_a";
 const USER_B = "user_b";
@@ -29,7 +42,7 @@ beforeEach(async () => {
   await seedUsers();
 });
 
-describe("getOverviewStats — Net Worth widget", () => {
+describe("dashboard balance card — net worth", () => {
   it("returns 0 net worth and 0 accounts when user has no accounts", async () => {
     const stats = await getOverviewStats(USER_A);
     expect(stats.netWorth).toBe(0);
@@ -183,7 +196,7 @@ describe("getOverviewStats — Net Worth widget", () => {
     expect(stats.netWorth).toBe(0.3);
   });
 
-  it("treats null balances as 0 (coalesce), not NaN", async () => {
+  it("leaves a null balance out of net worth and reports it unavailable, not NaN", async () => {
     const db = getTestDb();
     await db.insert(financialAccounts).values([
       makeAccount({
@@ -206,5 +219,36 @@ describe("getOverviewStats — Net Worth widget", () => {
     expect(stats.netWorth).toBe(42);
     expect(stats.accountCount).toBe(2);
     expect(Number.isNaN(stats.netWorth)).toBe(false);
+    expect(stats.summary.unavailableAccounts.map((a) => a.id)).toEqual(["acct_1"]);
+  });
+});
+
+describe("getRecentTransactions — dashboard list", () => {
+  beforeEach(async () => {
+    const db = getTestDb();
+    await db.insert(financialAccounts).values(
+      makeAccount({ id: "acct_r", userId: USER_A, plaidItemId: "pi_a", plaidAccountId: "pa_r" }),
+    );
+    const t = (id: string, flowClass: string | null, date: string, over = {}) =>
+      makeTxn({ id, userId: USER_A, accountId: "acct_r", flowClass, date: new Date(date + "T00:00:00Z"), ...over });
+    await db.insert(transactions).values([
+      t("r_food", "spending", "2026-08-03"),
+      t("r_cc", "cc_payment", "2026-08-04", { isTransfer: true }),
+      t("r_save", "savings_out", "2026-08-05", { isTransfer: true }),
+      t("r_legacy", null, "2026-08-06", { isTransfer: true }),
+      t("r_pay", "income", "2026-08-07"),
+    ]);
+  });
+
+  it("honours the hide-transfers preference like the transactions page", async () => {
+    const hidden = await getRecentTransactions(USER_A, { hideTransfers: true });
+    expect(hidden.map((r) => r.id)).toEqual(["r_pay", "r_food"]);
+    const shown = await getRecentTransactions(USER_A, { hideTransfers: false });
+    expect(shown.map((r) => r.id)).toEqual(["r_pay", "r_legacy", "r_save", "r_cc", "r_food"]);
+  });
+
+  it("is newest first and limited", async () => {
+    const rows = await getRecentTransactions(USER_A, { hideTransfers: false, limit: 2 });
+    expect(rows.map((r) => r.id)).toEqual(["r_pay", "r_legacy"]);
   });
 });

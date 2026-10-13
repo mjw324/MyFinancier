@@ -1,6 +1,5 @@
 import {
   and,
-  between,
   count,
   desc,
   eq,
@@ -8,102 +7,102 @@ import {
   ilike,
   isNotNull,
   isNull,
-  lte,
+  lt,
+  not,
   or,
   sql,
+  type SQL,
 } from "drizzle-orm";
 import { db } from "..";
 import { transactions } from "../schema";
-
-export async function getTransactionsByUserId(
-  userId: string,
-  opts?: { limit?: number; offset?: number },
-) {
-  return db.query.transactions.findMany({
-    where: eq(transactions.userId, userId),
-    orderBy: desc(transactions.date),
-    limit: opts?.limit ?? 50,
-    offset: opts?.offset ?? 0,
-  });
-}
-
-export async function getTransactionsByAccount(
-  accountId: string,
-  opts?: { limit?: number; offset?: number },
-) {
-  return db.query.transactions.findMany({
-    where: eq(transactions.accountId, accountId),
-    orderBy: desc(transactions.date),
-    limit: opts?.limit ?? 50,
-    offset: opts?.offset ?? 0,
-  });
-}
-
-export async function getTransactionsByDateRange(
-  userId: string,
-  startDate: Date,
-  endDate: Date,
-) {
-  return db.query.transactions.findMany({
-    where: and(
-      eq(transactions.userId, userId),
-      between(transactions.date, startDate, endDate),
-    ),
-    orderBy: desc(transactions.date),
-  });
-}
-
-export async function getTransactionsWithAccount(
-  userId: string,
-  opts?: { limit?: number; offset?: number },
-) {
-  return db.query.transactions.findMany({
-    where: eq(transactions.userId, userId),
-    orderBy: desc(transactions.date),
-    limit: opts?.limit ?? 50,
-    offset: opts?.offset ?? 0,
-    with: { financialAccount: true },
-  });
-}
+import {
+  effectiveCategorySql,
+  flowClassInSql,
+  flowGroupSql,
+  spendBucketSql,
+  type FlowClass,
+  type FlowGroup,
+} from "@/lib/analytics/flow";
+import {
+  counterpartySql,
+  fixedCostSql,
+  getCashFlow,
+  isTransferSql,
+  spendRowsSql,
+  type CashFlow,
+} from "@/lib/analytics/metrics";
+import { utcAddDays, utcStartOfDay } from "@/lib/analytics/periods";
 
 export interface TransactionFilters {
   search?: string;
   accountId?: string;
+  /** Effective category (custom_category ?? category), exact. */
   category?: string;
+  /**
+   * Spending bucket from the dashboard's "Where it went". Restricts to the rows
+   * that bucket summed: counted spending/offset rows whose bucket matches.
+   */
+  bucket?: string;
+  flowClass?: FlowClass;
+  flowGroup?: FlowGroup;
+  /** Counterparty key, as grouped by the merchant lists. */
+  counterparty?: string;
+  /** Fixed or variable costs (counted spending/offset rows only). */
+  cost?: "fixed" | "variable";
+  /** Inclusive calendar date (UTC midnight). */
   startDate?: Date;
+  /** Inclusive calendar date (UTC midnight). */
   endDate?: Date;
   recurring?: "all" | "recurring" | "onetime";
   spendingType?: "necessary" | "discretionary" | "unclassified";
+  /** false = honour the "hide transfers" list preference. */
   includeTransfers?: boolean;
 }
 
-function buildFilterConditions(userId: string, filters: TransactionFilters) {
-  const conditions = [eq(transactions.userId, userId)];
+/**
+ * The one WHERE clause behind the transactions list, its count, its totals and
+ * the export. Totals and counts use exactly the rows the list shows.
+ */
+export function buildFilterConditions(
+  userId: string,
+  filters: TransactionFilters,
+): SQL {
+  const conditions: SQL[] = [eq(transactions.userId, userId)];
 
   if (filters.includeTransfers === false) {
-    conditions.push(eq(transactions.isTransfer, false));
+    conditions.push(not(isTransferSql));
   }
-
   if (filters.accountId) {
     conditions.push(eq(transactions.accountId, filters.accountId));
   }
   if (filters.category) {
-    conditions.push(
-      sql`COALESCE(${transactions.customCategory}, ${transactions.category}) = ${filters.category}`,
-    );
+    conditions.push(sql`${effectiveCategorySql} = ${filters.category}`);
   }
-  if (filters.startDate && filters.endDate) {
-    const endOfDay = new Date(filters.endDate);
-    endOfDay.setHours(23, 59, 59, 999);
+  if (filters.bucket) {
+    conditions.push(spendRowsSql, sql`${spendBucketSql} = ${filters.bucket}`);
+  }
+  if (filters.flowClass) {
+    conditions.push(flowClassInSql([filters.flowClass]));
+  }
+  if (filters.flowGroup) {
+    conditions.push(flowGroupSql(filters.flowGroup));
+  }
+  if (filters.counterparty) {
+    conditions.push(sql`${counterpartySql} = ${filters.counterparty}`);
+  }
+  if (filters.cost) {
+    const fixed = fixedCostSql(userId);
+    conditions.push(spendRowsSql, filters.cost === "fixed" ? fixed : not(fixed));
+  }
+  // Calendar dates: [start, end + 1 day). UTC throughout, so the server's (or
+  // the test runner's) zone can never shift a boundary.
+  if (filters.startDate) {
+    conditions.push(gte(transactions.date, utcStartOfDay(filters.startDate)));
+  }
+  if (filters.endDate) {
     conditions.push(
-      between(transactions.date, filters.startDate, endOfDay),
+      lt(transactions.date, utcAddDays(utcStartOfDay(filters.endDate), 1)),
     );
-  } else if (filters.startDate) {
-    conditions.push(gte(transactions.date, filters.startDate));
-  } else if (filters.endDate) {
-    const endOfDay = new Date(filters.endDate);
-    endOfDay.setHours(23, 59, 59, 999);
-    conditions.push(lte(transactions.date, endOfDay));
   }
   if (filters.search) {
     const pattern = `%${filters.search}%`;
@@ -125,14 +124,19 @@ function buildFilterConditions(userId: string, filters: TransactionFilters) {
   } else if (filters.spendingType === "discretionary") {
     conditions.push(eq(transactions.spendingType, "discretionary"));
   } else if (filters.spendingType === "unclassified") {
-    // Spending only (positive amount) and no spendingType set.
+    // Spending rows (outflows that count as spending) with no type set.
     conditions.push(isNull(transactions.spendingType));
     conditions.push(sql`${transactions.amount}::numeric > 0`);
   }
 
-  return and(...conditions);
+  return and(...conditions)!;
 }
 
+/**
+ * One page of matching rows, newest first. `id` breaks ties: every row of a
+ * day shares the same midnight timestamp, and without a tiebreaker
+ * LIMIT/OFFSET pages can repeat or skip rows.
+ */
 export async function searchTransactions(
   userId: string,
   filters: TransactionFilters,
@@ -140,7 +144,7 @@ export async function searchTransactions(
 ) {
   return db.query.transactions.findMany({
     where: buildFilterConditions(userId, filters),
-    orderBy: desc(transactions.date),
+    orderBy: [desc(transactions.date), desc(transactions.id)],
     limit: opts?.limit ?? 25,
     offset: opts?.offset ?? 0,
     with: { financialAccount: true },
@@ -148,21 +152,15 @@ export async function searchTransactions(
 }
 
 export async function getDistinctCategories(userId: string) {
-  const effective = sql<string>`COALESCE(${transactions.customCategory}, ${transactions.category})`;
   const rows = await db
-    .selectDistinct({ category: effective })
+    .selectDistinct({ category: sql<string>`${effectiveCategorySql}` })
     .from(transactions)
     .where(
-      and(
-        eq(transactions.userId, userId),
-        sql`COALESCE(${transactions.customCategory}, ${transactions.category}) IS NOT NULL`,
-      ),
+      and(eq(transactions.userId, userId), sql`${effectiveCategorySql} IS NOT NULL`),
     )
-    .orderBy(effective);
+    .orderBy(effectiveCategorySql);
 
-  return rows
-    .map((r) => r.category!)
-    .filter(Boolean);
+  return rows.map((r) => r.category).filter(Boolean);
 }
 
 export function hasActiveFilters(filters: TransactionFilters): boolean {
@@ -170,6 +168,11 @@ export function hasActiveFilters(filters: TransactionFilters): boolean {
     filters.search ||
       filters.accountId ||
       filters.category ||
+      filters.bucket ||
+      filters.flowClass ||
+      filters.flowGroup ||
+      filters.counterparty ||
+      filters.cost ||
       filters.startDate ||
       filters.endDate ||
       (filters.recurring && filters.recurring !== "all") ||
@@ -177,33 +180,24 @@ export function hasActiveFilters(filters: TransactionFilters): boolean {
   );
 }
 
+export type TransactionTotals = CashFlow & {
+  /** Rows matching the filters — the same number the list paginates. */
+  count: number;
+};
+
+/**
+ * Totals for exactly the rows the list shows (same filters, same
+ * hide-transfers policy), computed by the same metric the dashboard uses.
+ */
 export async function getTransactionTotals(
   userId: string,
   filters: TransactionFilters = {},
-) {
-  const [result] = await db
-    .select({
-      count: count(),
-      // Refunds (negative, flagged) net against expenses and are excluded from income.
-      expenses: sql<string>`COALESCE(SUM(CASE WHEN ${transactions.amount} > 0 OR ${transactions.isRefund} THEN ${transactions.amount} ELSE 0 END), 0)`,
-      incomeNeg: sql<string>`COALESCE(SUM(CASE WHEN ${transactions.amount} < 0 AND NOT ${transactions.isRefund} THEN ${transactions.amount} ELSE 0 END), 0)`,
-    })
-    .from(transactions)
-    .where(
-      and(
-        buildFilterConditions(userId, filters),
-        eq(transactions.isTransfer, false),
-      ),
-    );
-
-  const expenses = parseFloat(result?.expenses ?? "0");
-  const income = -parseFloat(result?.incomeNeg ?? "0");
-  return {
-    count: result?.count ?? 0,
-    income,
-    expenses,
-    net: expenses - income,
-  };
+): Promise<TransactionTotals> {
+  const flow = await getCashFlow({
+    userId,
+    where: buildFilterConditions(userId, filters),
+  });
+  return { ...flow, count: flow.rowCount };
 }
 
 export async function getTransactionCount(
