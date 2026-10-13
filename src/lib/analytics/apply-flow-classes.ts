@@ -33,8 +33,10 @@ import {
   applyPairPlanToRows,
   execRows,
   planTransferPairs,
+  unpairTransaction,
   type PairPlan,
 } from "@/lib/plaid/transfers";
+import { allowedFlowClasses } from "./flow-options";
 
 export interface FlowRow {
   id: string;
@@ -430,5 +432,160 @@ export async function recomputeUserFlowsLocked(
   return db.transaction(async (tx) => {
     await lockUserFlows(tx, userId);
     return recomputeUserFlows(tx, userId, options);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// User overrides (verify-calcs N1, review S2)
+// ---------------------------------------------------------------------------
+
+export type OverrideResult =
+  | { ok: true; flowClass: FlowClass | null; changedIds: string[] }
+  | { ok: false; error: "not_found" | "invalid_class" };
+
+async function loadOwnRow(
+  executor: DbExecutor,
+  userId: string,
+  transactionId: string,
+): Promise<{ id: string; amount: string; transferPairId: string | null } | null> {
+  const [row] = await execRows(
+    executor,
+    sql`SELECT id, amount::text AS amount, transfer_pair_id
+        FROM transactions WHERE id = ${transactionId} AND user_id = ${userId}`,
+  );
+  if (!row) return null;
+  return {
+    id: String(row.id),
+    amount: String(row.amount),
+    transferPairId: row.transfer_pair_id == null ? null : String(row.transfer_pair_id),
+  };
+}
+
+async function writeManual(
+  executor: DbExecutor,
+  userId: string,
+  ids: string[],
+  classes: Map<string, FlowClass>,
+): Promise<void> {
+  for (const id of ids) {
+    const flowClass = classes.get(id);
+    if (!flowClass) continue;
+    const flags = legacyFlagsFor(flowClass);
+    await execRows(
+      executor,
+      sql`UPDATE transactions
+          SET flow_class = ${flowClass}, flow_class_source = 'manual',
+              is_transfer = ${flags.isTransfer}, is_refund = ${flags.isRefund},
+              refund_source = 'manual'
+          WHERE id = ${id} AND user_id = ${userId}
+          RETURNING id`,
+    );
+  }
+}
+
+/**
+ * Sets a user's flow class on one row. A non-internal class on a paired row
+ * also dissolves the pair (the partner is then reclassified on its own and,
+ * because this row is now manual, can never re-pair with it).
+ */
+export async function setManualFlowClass(
+  userId: string,
+  transactionId: string,
+  flowClass: FlowClass,
+): Promise<OverrideResult> {
+  return db.transaction(async (tx) => {
+    await lockUserFlows(tx, userId);
+    const row = await loadOwnRow(tx, userId, transactionId);
+    if (!row) return { ok: false as const, error: "not_found" as const };
+    if (!allowedFlowClasses(row.amount).includes(flowClass)) {
+      return { ok: false as const, error: "invalid_class" as const };
+    }
+    const unpaired =
+      row.transferPairId && FLOW_CLASS_GROUP[flowClass] !== "internal"
+        ? await unpairTransaction(tx, userId, transactionId)
+        : [];
+    await writeManual(tx, userId, [transactionId], new Map([[transactionId, flowClass]]));
+    const result = await recomputeUserFlows(tx, userId);
+    return {
+      ok: true as const,
+      flowClass,
+      changedIds: [...new Set([transactionId, ...unpaired, ...result.changedIds])],
+    };
+  });
+}
+
+/** Removes a user's override; the row is classified automatically again. */
+export async function clearManualFlowClass(
+  userId: string,
+  transactionId: string,
+): Promise<OverrideResult> {
+  return db.transaction(async (tx) => {
+    await lockUserFlows(tx, userId);
+    const row = await loadOwnRow(tx, userId, transactionId);
+    if (!row) return { ok: false as const, error: "not_found" as const };
+    // refund_source is cleared too, or the legacy-refund conversion would
+    // turn the row straight back into a manual class.
+    await execRows(
+      tx,
+      sql`UPDATE transactions SET flow_class_source = 'auto', refund_source = NULL
+          WHERE id = ${transactionId} AND user_id = ${userId} RETURNING id`,
+    );
+    const result = await recomputeUserFlows(tx, userId);
+    const [after] = await execRows(
+      tx,
+      sql`SELECT flow_class FROM transactions WHERE id = ${transactionId}`,
+    );
+    const flowClass = isFlowClass(after?.flow_class) ? after.flow_class : null;
+    return {
+      ok: true as const,
+      flowClass,
+      changedIds: [...new Set([transactionId, ...result.changedIds])],
+    };
+  });
+}
+
+/**
+ * "Not a transfer": dissolves the row's pair and pins both legs to the class
+ * they get on their own, so pairing never re-creates it. Either leg returns
+ * to automatic with clearManualFlowClass.
+ */
+export async function unpairTransfer(
+  userId: string,
+  transactionId: string,
+): Promise<OverrideResult> {
+  return db.transaction(async (tx) => {
+    await lockUserFlows(tx, userId);
+    const row = await loadOwnRow(tx, userId, transactionId);
+    if (!row) return { ok: false as const, error: "not_found" as const };
+    const legs = row.transferPairId ? await unpairTransaction(tx, userId, transactionId) : [];
+    if (legs.length > 0) {
+      const snapshot = await loadFlowSnapshot(tx, userId);
+      const ctx = buildContext(snapshot);
+      const accountById = new Map(ctx.accounts.map((a) => [a.id, a]));
+      const classes = new Map<string, FlowClass>();
+      for (const leg of snapshot.rows.filter((r) => legs.includes(r.id))) {
+        const account = accountById.get(leg.accountId);
+        if (!account) continue;
+        classes.set(
+          leg.id,
+          classifyFlow(
+            { ...leg, flowClass: null, flowClassSource: null, pairPartner: null },
+            account,
+            ctx,
+          ),
+        );
+      }
+      await writeManual(tx, userId, legs, classes);
+    }
+    const result = await recomputeUserFlows(tx, userId);
+    const [after] = await execRows(
+      tx,
+      sql`SELECT flow_class FROM transactions WHERE id = ${transactionId}`,
+    );
+    return {
+      ok: true as const,
+      flowClass: isFlowClass(after?.flow_class) ? after.flow_class : null,
+      changedIds: [...new Set([...legs, ...result.changedIds])],
+    };
   });
 }
