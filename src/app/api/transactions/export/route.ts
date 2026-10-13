@@ -77,6 +77,7 @@ export async function GET(request: Request) {
         flowGroup: filters.flowGroup,
         counterparty: filters.counterparty,
         cost: filters.cost,
+        view: filters.view,
         startDate: filters.startDate,
         endDate: filters.endDate,
         recurring: filters.recurring,

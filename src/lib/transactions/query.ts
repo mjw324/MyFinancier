@@ -23,6 +23,7 @@ const FIELDS = {
   flowGroup: z.enum(FLOW_GROUPS),
   counterparty: text(200),
   cost: z.enum(["fixed", "variable"]),
+  view: z.enum(["spending"]),
   recurring: z.enum(["recurring", "onetime"]),
   spendingType: z.enum(["necessary", "discretionary", "unclassified"]),
   from: z.string().transform((v, ctx) => {
@@ -94,6 +95,7 @@ export function parseTransactionQuery(raw: RawSearchParams): ParsedTransactionQu
       flowGroup: parsed.flowGroup,
       counterparty: parsed.counterparty,
       cost: parsed.cost,
+      view: parsed.view,
       startDate,
       endDate,
       recurring: parsed.recurring,

@@ -39,6 +39,9 @@ function drillDownChips(q: ParsedTransactionQuery): FilterChip[] {
   if (f.bucket) chips.push({ param: "bucket", label: `Spending: ${bucketLabel(f.bucket)}` });
   if (f.flowClass) chips.push({ param: "flowClass", label: FLOW_CLASS_LABEL[f.flowClass] });
   if (f.counterparty) chips.push({ param: "counterparty", label: `Merchant: ${f.counterparty}` });
+  if (f.view === "spending") {
+    chips.push({ param: "view", label: "Spending, net of refunds & reimbursements" });
+  }
   if (f.cost) chips.push({ param: "cost", label: f.cost === "fixed" ? "Fixed costs" : "Variable costs" });
   return chips;
 }

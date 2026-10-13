@@ -1,6 +1,12 @@
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatCurrency, formatDate, formatCategory, getCategoryColor } from "@/lib/utils/format";
+import {
+  displayName,
+  formatCurrency,
+  formatDate,
+  formatCategory,
+  getCategoryColor,
+} from "@/lib/utils/format";
 import { cn } from "@/lib/utils";
 import { TransactionLabel } from "@/components/features/transactions/transaction-label";
 
@@ -11,6 +17,9 @@ interface Transaction {
   amount: string;
   date: Date | string;
   category: string | null;
+  customName?: string | null;
+  customCategory?: string | null;
+  pending?: boolean | null;
 }
 
 interface RecentTransactionsProps {
@@ -19,7 +28,7 @@ interface RecentTransactionsProps {
 
 export function RecentTransactions({ transactions }: RecentTransactionsProps) {
   return (
-    <Card>
+    <Card className="gap-4">
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="text-base">Recent Transactions</CardTitle>
         <Link
@@ -37,6 +46,10 @@ export function RecentTransactions({ transactions }: RecentTransactionsProps) {
             {transactions.map((txn) => {
               const amount = parseFloat(txn.amount);
               const isExpense = amount > 0;
+              // The user's overrides win, as everywhere else.
+              const category = txn.customCategory ?? txn.category;
+              const merchant =
+                displayName({ customName: txn.customName, merchantName: txn.merchantName }) || null;
               return (
                 <div
                   key={txn.id}
@@ -45,18 +58,19 @@ export function RecentTransactions({ transactions }: RecentTransactionsProps) {
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium">
                       <TransactionLabel
-                        merchant={txn.merchantName}
+                        merchant={merchant}
                         full={txn.name}
                         truncate
                       />
                     </p>
                     <p className="text-xs text-muted-foreground">
                       {formatDate(txn.date)}
-                      {txn.category && (
+                      {txn.pending && " · Pending"}
+                      {category && (
                         <>
                           {" · "}
-                          <span style={{ color: getCategoryColor(txn.category).text }}>
-                            {formatCategory(txn.category)}
+                          <span style={{ color: getCategoryColor(category).text }}>
+                            {formatCategory(category)}
                           </span>
                         </>
                       )}

@@ -96,6 +96,7 @@ export type TransactionsLinkParams = {
   flowGroup?: string;
   counterparty?: string;
   cost?: "fixed" | "variable";
+  view?: "spending";
 };
 
 /** A /transactions URL that opens exactly the rows a dashboard figure summed. */

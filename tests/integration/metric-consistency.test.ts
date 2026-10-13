@@ -75,6 +75,25 @@ async function exportSummary(filters: TransactionFilters) {
   return { summary, sheetRows, rows };
 }
 
+describe("cash-flow tiles drill down to the rows they sum", () => {
+  it("each tile link reproduces its figure on the transactions page, transfers hidden or not", async () => {
+    const dashboard = await getCashFlow(periodScope(USER, PERIOD));
+    for (const includeTransfers of [true, false]) {
+      const base = periodToRange(PERIOD);
+      const totals = async (extra: Record<string, string>) =>
+        getTransactionTotals(USER, {
+          ...parseTransactionQuery({ ...base, ...extra }).filters,
+          includeTransfers,
+        });
+      expect((await totals({ flowGroup: "income" })).moneyIn).toBe(dashboard.moneyIn);
+      expect((await totals({ view: "spending" })).netSpending).toBe(dashboard.netSpending);
+      // An explicit savings filter overrides the hide-transfers preference.
+      expect((await totals({ flowGroup: "savings" })).savedNet).toBe(dashboard.savedNet);
+      expect((await totals({ flowClass: "cc_payment" })).count).toBe(2);
+    }
+  });
+});
+
 describe("dashboard and transactions page return identical totals", () => {
   it("cash flow == transactions totals == export summary for the same period", async () => {
     const dashboard = await getCashFlow(periodScope(USER, PERIOD));

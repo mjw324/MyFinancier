@@ -7,6 +7,8 @@ import {
   type InsightInputs,
 } from "@/lib/analytics/insights";
 import type { CashFlow } from "@/lib/analytics/metrics";
+import { SYNTHETIC_BUCKETS, UNCATEGORIZED_BUCKET } from "@/lib/analytics/flow";
+import { SYNTHETIC_BUCKET_LABELS, bucketLabel } from "@/lib/analytics/labels";
 
 function flow(over: Partial<CashFlow> = {}): CashFlow {
   return {
@@ -114,5 +116,15 @@ describe("buildInsights", () => {
     expect(list.find((i) => i.id === "income-extra")!.text).toContain(
       "3 paychecks from Acme Payroll instead of the usual 2",
     );
+  });
+});
+
+describe("bucket labels", () => {
+  it("labels every synthetic bucket flow.ts can produce", () => {
+    for (const key of [...Object.values(SYNTHETIC_BUCKETS), UNCATEGORIZED_BUCKET]) {
+      expect(SYNTHETIC_BUCKET_LABELS[key], key).toBeTruthy();
+    }
+    expect(bucketLabel("SENT_TO_PEOPLE")).toBe("Sent to people");
+    expect(bucketLabel("FOOD_AND_DRINK")).toBe("Food And Drink");
   });
 });

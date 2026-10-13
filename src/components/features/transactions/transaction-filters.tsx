@@ -41,6 +41,7 @@ const FILTER_KEYS = [
   "bucket",
   "counterparty",
   "cost",
+  "view",
 ];
 
 export function TransactionFilters({

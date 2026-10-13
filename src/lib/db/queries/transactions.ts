@@ -16,6 +16,7 @@ import {
 import { db } from "..";
 import { transactions } from "../schema";
 import {
+  FLOW_CLASS_GROUP,
   effectiveCategorySql,
   flowClassInSql,
   flowGroupSql,
@@ -47,6 +48,8 @@ export interface TransactionFilters {
   flowGroup?: FlowGroup;
   /** Counterparty key, as grouped by the merchant lists. */
   counterparty?: string;
+  /** "spending": the rows net spending sums (spending + refunds/reimbursements). */
+  view?: "spending";
   /** Fixed or variable costs (counted spending/offset rows only). */
   cost?: "fixed" | "variable";
   /** Inclusive calendar date (UTC midnight). */
@@ -69,8 +72,18 @@ export function buildFilterConditions(
 ): SQL {
   const conditions: SQL[] = [eq(transactions.userId, userId)];
 
-  if (filters.includeTransfers === false) {
+  // Asking for transfers or savings explicitly overrides the hide-transfers
+  // list preference; otherwise a "Saved / moved" link would open an empty list.
+  const wantsTransfers =
+    filters.flowGroup === "internal" ||
+    filters.flowGroup === "savings" ||
+    (filters.flowClass !== undefined &&
+      ["internal", "savings"].includes(FLOW_CLASS_GROUP[filters.flowClass]));
+  if (filters.includeTransfers === false && !wantsTransfers) {
     conditions.push(not(isTransferSql));
+  }
+  if (filters.view === "spending") {
+    conditions.push(spendRowsSql);
   }
   if (filters.accountId) {
     conditions.push(eq(transactions.accountId, filters.accountId));
@@ -173,6 +186,7 @@ export function hasActiveFilters(filters: TransactionFilters): boolean {
       filters.flowGroup ||
       filters.counterparty ||
       filters.cost ||
+      filters.view ||
       filters.startDate ||
       filters.endDate ||
       (filters.recurring && filters.recurring !== "all") ||

@@ -37,6 +37,7 @@ export type FilterDisplay = {
   flowGroup?: string;
   counterparty?: string;
   cost?: "fixed" | "variable";
+  view?: "spending";
   startDate?: Date;
   endDate?: Date;
   recurring?: "all" | "recurring" | "onetime";
@@ -243,6 +244,7 @@ function describeFilters(fd: FilterDisplay): Array<[string, string]> {
   if (fd.flowGroup) out.push(["Flow group", fd.flowGroup]);
   if (fd.counterparty) out.push(["Counterparty", fd.counterparty]);
   if (fd.cost) out.push(["Costs", fd.cost]);
+  if (fd.view === "spending") out.push(["View", "Net spending rows"]);
   if (fd.startDate) out.push(["Start date", isoDate(fd.startDate)]);
   if (fd.endDate) out.push(["End date", isoDate(fd.endDate)]);
   if (fd.recurring && fd.recurring !== "all") {

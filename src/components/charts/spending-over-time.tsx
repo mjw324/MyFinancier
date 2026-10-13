@@ -1,15 +1,8 @@
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  ReferenceArea,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { Bar, BarChart, CartesianGrid, ReferenceArea, XAxis, YAxis } from "recharts";
 import {
   ChartContainer,
   ChartTooltip,
@@ -17,188 +10,172 @@ import {
   type ChartConfig,
 } from "@/components/ui/chart";
 import { formatCurrency } from "@/lib/utils/format";
+import { sumMoney } from "@/lib/utils/money";
+import { transactionsHref } from "@/lib/utils/date-ranges";
 
 interface SpendingOverTimeProps {
-  data: Array<{
-    date: string;
-    rawDate: string;
-    amount: number;
-  }>;
+  /** Dense: one point per calendar day (YYYY-MM-DD), 0 on quiet days. */
+  data: Array<{ date: string; net: number }>;
 }
 
 const chartConfig = {
-  amount: {
-    label: "Spending",
-    color: "var(--chart-1)",
-  },
+  net: { label: "Net spending", color: "var(--chart-1)" },
 } satisfies ChartConfig;
 
+function dayLabel(iso: string): string {
+  return new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-US", {
+    timeZone: "UTC",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+const compact = (v: number) =>
+  Math.abs(v) >= 1000 ? `$${Math.round(v / 100) / 10}k` : `$${Math.round(v)}`;
+
+/**
+ * Net spending per day — the same figure the transactions totals bar shows
+ * for a date range, so dragging across days opens a list whose totals match
+ * the selection.
+ */
 export function SpendingOverTime({ data }: SpendingOverTimeProps) {
   const router = useRouter();
   const [selectStart, setSelectStart] = useState<string | null>(null);
   const [selectEnd, setSelectEnd] = useState<string | null>(null);
 
-  const dateLabels = Object.fromEntries(
-    data.map((d) => [d.rawDate, d.date]),
-  );
+  const onDown = useCallback((state: { activeLabel?: string | number }) => {
+    if (state?.activeLabel != null) {
+      setSelectStart(String(state.activeLabel));
+      setSelectEnd(null);
+    }
+  }, []);
 
-  const handleMouseDown = useCallback(
+  const onMove = useCallback(
     (state: { activeLabel?: string | number }) => {
-      if (state?.activeLabel != null) {
-        setSelectStart(String(state.activeLabel));
-        setSelectEnd(null);
-      }
-    },
-    [],
-  );
-
-  const handleMouseMove = useCallback(
-    (state: { activeLabel?: string | number }) => {
-      if (selectStart && state?.activeLabel != null) {
-        setSelectEnd(String(state.activeLabel));
-      }
+      if (selectStart && state?.activeLabel != null) setSelectEnd(String(state.activeLabel));
     },
     [selectStart],
   );
 
-  const handleMouseUp = useCallback(() => {
+  const onUp = useCallback(() => {
     if (!selectStart) return;
-
     const end = selectEnd ?? selectStart;
-    const [from, to] =
-      selectStart <= end ? [selectStart, end] : [end, selectStart];
-    router.push(`/transactions?from=${from}&to=${to}`);
-
+    const [from, to] = selectStart <= end ? [selectStart, end] : [end, selectStart];
+    router.push(transactionsHref({ from, to, view: "spending" }));
     setSelectStart(null);
     setSelectEnd(null);
   }, [selectStart, selectEnd, router]);
 
-  const handleMouseLeave = useCallback(() => {
+  const onLeave = useCallback(() => {
     setSelectStart(null);
     setSelectEnd(null);
   }, []);
 
-  const selectionRange = useMemo(() => {
+  const selection = useMemo(() => {
     if (!selectStart || !selectEnd || selectStart === selectEnd) return null;
-
-    const [from, to] =
-      selectStart <= selectEnd ? [selectStart, selectEnd] : [selectEnd, selectStart];
-
-    const total = data
-      .filter((d) => d.rawDate >= from && d.rawDate <= to)
-      .reduce((sum, d) => sum + d.amount, 0);
-
+    const [from, to] = selectStart <= selectEnd ? [selectStart, selectEnd] : [selectEnd, selectStart];
     return {
-      fromLabel: dateLabels[from] ?? from,
-      toLabel: dateLabels[to] ?? to,
-      total,
+      from,
+      to,
+      total: sumMoney(data.filter((d) => d.date >= from && d.date <= to).map((d) => d.net)),
     };
-  }, [selectStart, selectEnd, data, dateLabels]);
+  }, [selectStart, selectEnd, data]);
 
-  if (data.length === 0) {
+  if (data.length === 0 || data.every((d) => d.net === 0)) {
     return (
-      <div className="flex h-[250px] items-center justify-center text-sm text-muted-foreground">
-        No spending data yet
+      <div className="flex h-[200px] items-center justify-center text-sm text-muted-foreground">
+        No spending in this period.
       </div>
     );
   }
 
   return (
-    <ChartContainer
-      config={chartConfig}
-      className="max-h-[300px] w-full [&_.recharts-wrapper]:cursor-crosshair"
-    >
-      <AreaChart
-        data={data}
-        margin={{ left: 12, right: 12 }}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseLeave}
+    <div className="flex flex-col gap-2">
+      <ChartContainer
+        config={chartConfig}
+        className="aspect-auto h-[240px] w-full select-none [&_.recharts-wrapper]:cursor-crosshair"
       >
-        <CartesianGrid vertical={false} />
-        <XAxis
-          dataKey="rawDate"
-          tickLine={false}
-          axisLine={false}
-          tickMargin={8}
-          tickFormatter={(value) => dateLabels[value] ?? value}
-        />
-        <YAxis
-          tickLine={false}
-          axisLine={false}
-          tickMargin={8}
-          tickFormatter={(value) => `$${value}`}
-        />
-        <ChartTooltip
-          content={
-            selectionRange ? (
-              <SelectionRangeTooltip range={selectionRange} />
-            ) : (
-              <ChartTooltipContent
-                formatter={(value) => formatCurrency(Number(value))}
-                labelFormatter={(label) => { const key = String(label); return dateLabels[key] ?? key; }}
-              />
-            )
-          }
-        />
-        <defs>
-          <linearGradient id="fillAmount" x1="0" y1="0" x2="0" y2="1">
-            <stop
-              offset="5%"
-              stopColor="var(--chart-1)"
-              stopOpacity={0.8}
-            />
-            <stop
-              offset="95%"
-              stopColor="var(--chart-1)"
-              stopOpacity={0.1}
-            />
-          </linearGradient>
-        </defs>
-        <Area
-          dataKey="amount"
-          type="monotone"
-          fill="url(#fillAmount)"
-          stroke="var(--chart-1)"
-          strokeWidth={2}
-          activeDot={{ r: 5, className: "cursor-pointer" }}
-        />
-        {selectStart && selectEnd && selectStart !== selectEnd && (
-          <ReferenceArea
-            x1={selectStart}
-            x2={selectEnd}
-            fill="var(--chart-1)"
-            fillOpacity={0.1}
-            stroke="var(--chart-1)"
-            strokeOpacity={0.3}
-            strokeDasharray="3 3"
+        <BarChart
+          data={data}
+          margin={{ left: 4, right: 8, top: 8 }}
+          onMouseDown={onDown}
+          onMouseMove={onMove}
+          onMouseUp={onUp}
+          onMouseLeave={onLeave}
+        >
+          <CartesianGrid vertical={false} />
+          <XAxis
+            dataKey="date"
+            tickLine={false}
+            axisLine={false}
+            tickMargin={8}
+            minTickGap={24}
+            tickFormatter={dayLabel}
           />
-        )}
-      </AreaChart>
-    </ChartContainer>
+          <YAxis
+            tickLine={false}
+            axisLine={false}
+            tickMargin={4}
+            width={48}
+            tickFormatter={(v) => compact(Number(v))}
+          />
+          <ChartTooltip
+            cursor={{ fill: "var(--muted)" }}
+            content={
+              selection ? (
+                <SelectionTooltip
+                  label={`${dayLabel(selection.from)} – ${dayLabel(selection.to)}`}
+                  total={selection.total}
+                />
+              ) : (
+                <ChartTooltipContent
+                  labelFormatter={(_, payload) => dayLabel(String(payload?.[0]?.payload?.date ?? ""))}
+                  formatter={(value) => (
+                    <div className="flex w-full items-center justify-between gap-3">
+                      <span className="text-muted-foreground">Net spending</span>
+                      <span className="font-medium tabular-nums">{formatCurrency(Number(value))}</span>
+                    </div>
+                  )}
+                />
+              )
+            }
+          />
+          <Bar dataKey="net" fill="var(--color-net)" radius={[3, 3, 0, 0]} maxBarSize={18} />
+          {selectStart && selectEnd && selectStart !== selectEnd && (
+            <ReferenceArea
+              x1={selectStart}
+              x2={selectEnd}
+              fill="var(--chart-1)"
+              fillOpacity={0.12}
+              stroke="var(--chart-1)"
+              strokeOpacity={0.3}
+            />
+          )}
+        </BarChart>
+      </ChartContainer>
+      <p className="text-xs text-muted-foreground">
+        Drag across days to open those transactions. Days below zero had more refunds than spending.
+      </p>
+    </div>
   );
 }
 
-function SelectionRangeTooltip({
+function SelectionTooltip({
   active,
-  range,
+  label,
+  total,
 }: {
   active?: boolean;
-  range: { fromLabel: string; toLabel: string; total: number };
+  label: string;
+  total: number;
 }) {
   if (!active) return null;
-
   return (
-    <div className="grid min-w-[8rem] items-start gap-1.5 rounded-lg border border-border/50 bg-background px-2.5 py-1.5 text-xs shadow-xl">
-      <div className="font-medium">
-        {range.fromLabel} &mdash; {range.toLabel}
-      </div>
+    <div className="grid min-w-[8rem] gap-1.5 rounded-lg border border-border/50 bg-background px-2.5 py-1.5 text-xs shadow-xl">
+      <div className="font-medium">{label}</div>
       <div className="flex items-center justify-between gap-2">
-        <span className="text-muted-foreground">Total Spending</span>
-        <span className="font-mono font-medium text-foreground tabular-nums">
-          {formatCurrency(range.total)}
-        </span>
+        <span className="text-muted-foreground">Net spending</span>
+        <span className="font-medium tabular-nums">{formatCurrency(total)}</span>
       </div>
     </div>
   );
