@@ -71,8 +71,8 @@ export function BudgetCard({ budget, categories, today }: BudgetCardProps) {
           {formatBudgetPercentage(budget.spent, budget.budgeted)} used
           {budget.offsets > 0 &&
             (netRefund
-              ? ` · refunds of ${formatCurrency(budget.offsets)} exceed spending by ${formatCurrency(Math.abs(budget.spent))}`
-              : ` · after ${formatCurrency(budget.offsets)} in refunds`)}
+              ? ` · ${formatCurrency(budget.offsets)} back (refunds, reimbursements) is more than was spent`
+              : ` · after ${formatCurrency(budget.offsets)} back from refunds/reimbursements`)}
         </p>
       </CardContent>
     </Card>
