@@ -250,6 +250,11 @@ describe("bank inflows", () => {
     expect(classify({ amount: "-20.00", category: "OTHER", name: "Cash Redemption" })).toBe("card_reward");
   });
 
+  it("wages Plaid files under a merchant category are still income", () => {
+    expect(classify({ amount: "-810.00", category: "FOOD_AND_DRINK", name: "Salad Chain inc payroll ppd id" })).toBe("income");
+    expect(classify({ amount: "-810.00", category: "FOOD_AND_DRINK", name: "Salad Chain refund" })).toBe("refund");
+  });
+
   it("Venmo and Zelle receipts are both reimbursements; wallet cash-out arrival is internal", () => {
     expect(classify({ amount: "-60.00", category: "TRANSFER_IN", categoryId: "TRANSFER_IN_TRANSFER_IN_FROM_APPS", name: "Zelle payment from JAMIE DOE ABC123XYZ9" })).toBe("reimbursement");
     expect(classify({ amount: "-60.00", category: "TRANSFER_IN", categoryId: "TRANSFER_IN_TRANSFER_IN_FROM_APPS", name: "Venmo" })).toBe("internal_transfer");

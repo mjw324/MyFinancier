@@ -177,6 +177,9 @@ const CASHOUT_TEXT =
 const CASHIN_TEXT =
   /\b(?:transfer\s+from\s+(?:your\s+)?bank|add(?:ed)?\s+money|add\s+funds|bank\s+deposit|top[\s-]?up)\b/;
 
+/** Wording of an employer paying wages, whatever category Plaid guessed. */
+const PAYROLL_TEXT = /\b(?:payroll|salary|direct\s+dep(?:osit)?|dir\s+dep)\b/;
+
 /** A deposited cheque or cash at a bank. */
 const DEPOSIT_TEXT = /\bdeposit\b/;
 
@@ -767,6 +770,8 @@ function classifyInflow(
   }
 
   if (f.primary === "INCOME") return "income";
+  // Wages Plaid filed under a purchase or "other" category.
+  if (!isApp && PAYROLL_TEXT.test(f.text) && f.primary !== "TRANSFER_IN") return "income";
 
   // A card payment coming back (returned payment / credit-balance refund).
   if (PAYMENT_OUT_TEXT.test(f.text) && !isMerchantPrimary(f) && !isApp) {
