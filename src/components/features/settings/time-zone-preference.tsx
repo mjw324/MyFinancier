@@ -22,7 +22,8 @@ import {
 import { cn } from "@/lib/utils";
 import { updateTimeZoneAction } from "@/app/(routes)/(dashboard)/settings/time-zone-actions";
 
-const AUTOMATIC = "__automatic__";
+// Searchable label for the "follow the browser" option (cmdk filters on value).
+const AUTOMATIC = "Automatic (browser time zone)";
 
 interface TimeZonePreferenceProps {
   /** From the `tz` cookie (the browser's zone), if known. */
