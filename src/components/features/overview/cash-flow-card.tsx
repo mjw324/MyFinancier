@@ -122,8 +122,8 @@ export function CashFlowCard({ flow, title, range, previous }: CashFlowCardProps
           </Link>
         </CardAction>
       </CardHeader>
-      <CardContent className="flex flex-col gap-4">
-        <dl className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <CardContent className="@container flex flex-col gap-4">
+        <dl className="grid grid-cols-2 gap-3 @2xl:grid-cols-4">
           {tiles.map((t) => (
             <div key={t.label} className="min-w-0 rounded-lg border p-3">
               <dt>
@@ -133,7 +133,7 @@ export function CashFlowCard({ flow, title, range, previous }: CashFlowCardProps
               </dt>
               <dd
                 className={cn(
-                  "mt-1 truncate text-xl font-semibold sm:text-2xl",
+                  "mt-1 text-xl font-semibold [overflow-wrap:anywhere] @4xl:text-2xl",
                   t.negative && "text-destructive-foreground",
                 )}
               >
@@ -168,6 +168,7 @@ export function CashFlowCard({ flow, title, range, previous }: CashFlowCardProps
           </p>
         )}
 
+        {Object.keys(flow.byClass).length > 0 && (
         <details className="group rounded-lg border px-3 py-2">
           <summary className="cursor-pointer text-sm font-medium">Breakdown by type</summary>
           <div className="mt-2 flex flex-col gap-3 pb-1">
@@ -205,6 +206,7 @@ export function CashFlowCard({ flow, title, range, previous }: CashFlowCardProps
             })}
           </div>
         </details>
+        )}
       </CardContent>
     </Card>
   );

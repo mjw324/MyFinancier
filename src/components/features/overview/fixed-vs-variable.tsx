@@ -34,12 +34,12 @@ export function FixedVsVariable({
         <CardTitle className="text-base">Fixed vs variable</CardTitle>
         <CardDescription>{title}</CardDescription>
       </CardHeader>
-      <CardContent className="flex flex-col gap-4">
+      <CardContent className="@container flex flex-col gap-4">
         {data.total === 0 && data.fixed === 0 ? (
           <p className="text-sm text-muted-foreground">No spending in this period.</p>
         ) : (
           <>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 @xs:grid-cols-2">
               <Link
                 href={transactionsHref({ ...range, cost: "fixed" })}
                 className="rounded-lg border p-3 hover:bg-muted/40"

@@ -56,8 +56,8 @@ export default async function OverviewPage({
         <PeriodSelect value={ctx.key} />
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        <div className="min-w-0 lg:col-span-2">
+      <div className="grid gap-6 xl:grid-cols-3">
+        <div className="min-w-0 xl:col-span-2">
           <Suspense fallback={<WidgetSkeleton title="Cash flow" height="h-48" />}>
             <CashFlowWidget ctx={ctx} />
           </Suspense>
@@ -69,8 +69,8 @@ export default async function OverviewPage({
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        <div className="min-w-0 lg:col-span-2">
+      <div className="grid gap-6 xl:grid-cols-3">
+        <div className="min-w-0 xl:col-span-2">
           <Suspense fallback={<WidgetSkeleton title="Where it went" height="h-72" />}>
             <WhereItWentWidget ctx={ctx} />
           </Suspense>
@@ -82,8 +82,8 @@ export default async function OverviewPage({
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        <div className="min-w-0 lg:col-span-2">
+      <div className="grid gap-6 xl:grid-cols-3">
+        <div className="min-w-0 xl:col-span-2">
           <Suspense fallback={<WidgetSkeleton title="Pace" height="h-72" />}>
             <PaceWidget ctx={ctx} />
           </Suspense>
@@ -99,11 +99,11 @@ export default async function OverviewPage({
         <SpendingOverTimeWidget ctx={ctx} />
       </Suspense>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        <div className="min-w-0 lg:col-span-1">
+      <div className="grid gap-6 xl:grid-cols-3">
+        <div className="min-w-0 xl:col-span-1">
           <SafeToSpend />
         </div>
-        <div className="min-w-0 lg:col-span-2">
+        <div className="min-w-0 xl:col-span-2">
           <BillCalendar />
         </div>
       </div>
