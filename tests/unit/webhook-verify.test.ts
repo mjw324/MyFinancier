@@ -60,7 +60,13 @@ describe("PLAID_WEBHOOK_TEST_JWK seam (harness only)", () => {
     await expect(
       verifyPlaidWebhook(body, await signed(body, { iat: Math.floor(Date.now() / 1000) - 3600 })),
     ).rejects.toMatchObject({ kind: "invalid" });
-    const tampered = (await signed(body)).replace(/.$/, (c) => (c === "A" ? "B" : "A"));
+    // Flip a character in the middle of the signature: the last base64url
+    // character of a 64-byte ES256 signature carries 4 padding bits, so
+    // changing it can decode to identical bytes and still verify.
+    const jwt = await signed(body);
+    const sigStart = jwt.lastIndexOf(".") + 1;
+    const mid = sigStart + 10;
+    const tampered = jwt.slice(0, mid) + (jwt[mid] === "A" ? "B" : "A") + jwt.slice(mid + 1);
     await expect(verifyPlaidWebhook(body, tampered)).rejects.toMatchObject({ kind: "invalid" });
   });
 
