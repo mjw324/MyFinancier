@@ -1,5 +1,7 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { AlertTriangle } from "lucide-react";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 import {
   Popover,
   PopoverContent,
@@ -11,8 +13,8 @@ import {
   formatDate,
   formatRelativeDate,
 } from "@/lib/utils/format";
-import { isLiabilityType } from "@/lib/utils/account-type";
 import { cn } from "@/lib/utils";
+import type { AccountBalanceView } from "@/lib/utils/balances";
 import { PlaidLinkButton } from "./plaid-link-button";
 import type { PendingTxnPreview } from "@/lib/db/queries/accounts";
 
@@ -23,14 +25,9 @@ interface AccountCardProps {
     officialName: string | null;
     type: string;
     subtype: string | null;
-    currentBalance: string | null;
-    availableBalance: string | null;
-    isoCurrencyCode: string | null;
-    lastSyncedAt: Date | null;
-    settledBalance: number;
-    projectedBalance: number;
+    mask?: string | null;
+    balance: AccountBalanceView;
     pendingCount: number;
-    pendingSum: number;
     pendingTransactions: PendingTxnPreview[];
     plaidItem: {
       id: string;
@@ -40,84 +37,125 @@ interface AccountCardProps {
   };
 }
 
-export function AccountCard({ account }: AccountCardProps) {
-  const needsReconnect =
-    account.plaidItem.status === "login_required" ||
-    account.plaidItem.status === "pending_expiration";
-  const isLiability = isLiabilityType(account.type);
-  const currency = account.isoCurrencyCode ?? "USD";
+const cents = (c: number | null) => (c ?? 0) / 100;
 
-  const settled = account.settledBalance;
-  const projected = account.projectedBalance;
+export function AccountCard({ account }: AccountCardProps) {
+  const b = account.balance;
+  const needsReconnect =
+    b.state !== "closed" &&
+    (account.plaidItem.status === "login_required" ||
+      account.plaidItem.status === "pending_expiration");
+  const isLiability = b.kind === "credit" || b.kind === "loan";
+  const muted = b.state === "closed" || b.state === "unavailable";
   const showProjected =
-    account.pendingCount > 0 && Math.abs(projected - settled) > 0.005;
+    b.state !== "closed" &&
+    account.pendingCount > 0 &&
+    b.projectedCents !== null &&
+    b.settledCents !== null &&
+    b.projectedCents !== b.settledCents;
 
   return (
-    <Card>
-      <CardHeader className="pb-2">
-        <div className="flex items-start justify-between">
-          <div>
-            <p className="text-xs text-muted-foreground">
-              {account.plaidItem.institutionName ?? "Unknown Institution"}
-            </p>
-            <CardTitle className="text-base">
-              {account.officialName || account.name}
-            </CardTitle>
-          </div>
-          <Badge variant="secondary" className="text-xs capitalize">
+    <Card className={cn(b.state === "closed" && "opacity-70")}>
+      <CardHeader>
+        <CardDescription className="truncate text-xs">
+          {account.plaidItem.institutionName ?? "Unknown institution"}
+          {account.mask ? ` ·••• ${account.mask}` : ""}
+        </CardDescription>
+        <CardTitle className="text-base">{account.officialName || account.name}</CardTitle>
+        <CardAction className="flex flex-col items-end gap-1">
+          <Badge variant="secondary" className="capitalize">
             {account.subtype || account.type}
           </Badge>
-        </div>
+          {b.state === "closed" && <Badge variant="outline">Closed</Badge>}
+        </CardAction>
       </CardHeader>
-      <CardContent className="mt-auto">
-        <div className="flex items-end justify-between">
+      <CardContent className="mt-auto flex flex-col gap-2">
+        {b.state === "unavailable" ? (
+          <div>
+            <p className="text-2xl font-semibold text-muted-foreground">Unavailable</p>
+            <p className="text-xs text-muted-foreground">
+              Your bank does not share a balance for this account, so it is
+              left out of net worth.
+            </p>
+          </div>
+        ) : (
           <div className="min-w-0">
             <p
               className={cn(
-                "text-2xl font-bold",
-                isLiability
-                  ? "text-red-600 dark:text-red-400"
-                  : "text-emerald-600 dark:text-emerald-400",
+                "text-2xl font-bold tabular-nums",
+                muted
+                  ? "text-muted-foreground"
+                  : isLiability
+                    ? "text-red-600 dark:text-red-400"
+                    : "text-emerald-600 dark:text-emerald-400",
               )}
             >
-              {isLiability ? "-" : ""}
-              {formatCurrency(settled, currency)}
+              {isLiability && (b.settledCents ?? 0) > 0 ? "-" : ""}
+              {formatCurrency(Math.abs(cents(b.settledCents)), b.currency)}
             </p>
             <p className="text-xs text-muted-foreground">
-              {isLiability ? "Owed" : "Settled"}
-              {account.lastSyncedAt &&
-                ` · synced ${formatRelativeDate(account.lastSyncedAt)}`}
+              {isLiability ? "Owed" : b.kind === "cash" ? "Current balance" : "Balance"}
+              {b.kind === "cash" && b.availableCents !== null && b.availableCents !== b.settledCents &&
+                ` · ${formatCurrency(cents(b.availableCents), b.currency)} available`}
             </p>
-            {showProjected && (
-              <p className="mt-1 text-xs text-muted-foreground">
-                <span className="tabular-nums">
-                  {isLiability ? "-" : ""}
-                  {formatCurrency(projected, currency)}
-                </span>{" "}
-                projected ·{" "}
-                <PendingPopover
-                  count={account.pendingCount}
-                  txns={account.pendingTransactions}
-                  currency={currency}
-                />
-              </p>
-            )}
           </div>
-          {needsReconnect && (
-            <div className="flex flex-col items-end gap-1">
-              <Badge variant="destructive" className="text-xs">
-                {account.plaidItem.status === "login_required"
-                  ? "Login Required"
-                  : "Expiring Soon"}
-              </Badge>
-              <PlaidLinkButton
-                plaidItemId={account.plaidItem.id}
-                variant="outline"
-                size="sm"
-              />
-            </div>
+        )}
+
+        {b.kind === "credit" && b.state === "ok" && b.creditLimitCents !== null && b.utilization !== null && (
+          <div className="flex flex-col gap-1">
+            <Progress
+              value={Math.min(100, b.utilization * 100)}
+              className={cn("h-1.5", b.utilization > 0.9 && "[&>div]:bg-destructive")}
+              aria-label="Credit used"
+            />
+            <p className="text-xs text-muted-foreground">
+              {Math.round(b.utilization * 100)}% of{" "}
+              {b.creditLimitEstimated ? "≈" : ""}
+              {formatCurrency(cents(b.creditLimitCents), b.currency)} limit
+            </p>
+          </div>
+        )}
+
+        {showProjected && (
+          <p className="text-xs text-muted-foreground">
+            <span className="tabular-nums">
+              {isLiability ? "-" : ""}
+              {formatCurrency(Math.abs(cents(b.projectedCents)), b.currency)}
+            </span>{" "}
+            after{" "}
+            <PendingPopover
+              count={account.pendingCount}
+              txns={account.pendingTransactions}
+              currency={b.currency}
+            />
+          </p>
+        )}
+
+        <div className="flex flex-col gap-0.5 text-xs text-muted-foreground">
+          {b.state === "closed" && <p>Closed — not included in totals</p>}
+          {b.state === "foreign_currency" && (
+            <p>Not included in totals ({b.currency} is not converted)</p>
+          )}
+          {b.state !== "closed" && b.state !== "unavailable" && (
+            <p className={cn("flex items-center gap-1", b.isStale && "text-foreground")}>
+              {b.isStale && <AlertTriangle className="size-3.5 shrink-0" />}
+              {b.balanceAsOf
+                ? `${b.isStale ? "Balance last updated" : "Updated"} ${formatRelativeDate(b.balanceAsOf)}`
+                : "Balance never updated"}
+            </p>
           )}
         </div>
+
+        {needsReconnect && (
+          <div className="flex items-center justify-between gap-2">
+            <Badge variant="destructive">
+              {account.plaidItem.status === "login_required"
+                ? "Login required"
+                : "Expiring soon"}
+            </Badge>
+            <PlaidLinkButton plaidItemId={account.plaidItem.id} variant="outline" size="sm" />
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -138,7 +176,7 @@ function PendingPopover({
         {count} pending
       </PopoverTrigger>
       <PopoverContent className="w-72 p-0" align="start">
-        <div className="max-h-72 overflow-y-auto divide-y">
+        <div className="max-h-72 divide-y overflow-y-auto">
           {txns.length === 0 ? (
             <p className="px-3 py-2 text-xs text-muted-foreground">
               No pending transactions.

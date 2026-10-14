@@ -77,6 +77,9 @@ export function toProjectionInput(
     merchantName: row.merchantName,
     description: row.description,
     customName: row.customName,
+    accountId: row.accountId,
+    pfcPrimary: row.pfcPrimary,
+    pfcDetailed: row.pfcDetailed,
     recentTransactionDates: recentDates,
   };
 }

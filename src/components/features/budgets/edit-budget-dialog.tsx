@@ -3,73 +3,43 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Pencil } from "lucide-react";
-import {
-  updateBudgetAction,
   deleteBudgetAction,
+  updateBudgetAction,
 } from "@/app/(routes)/(dashboard)/budgets/actions";
+import type { BudgetCategoryOption } from "@/lib/budgets/categories";
+import type { BudgetPeriod } from "@/lib/utils/budget-periods";
+import { BudgetForm } from "./budget-form";
 
 interface EditBudgetDialogProps {
   budget: {
     budgetId: string;
-    categoryId: string;
-    categoryName: string;
+    categoryKey: string;
+    categoryLabel: string;
     budgeted: number;
-    period: string;
+    period: BudgetPeriod;
     startDate: string;
+    endDate: string | null;
   };
-  categories: Array<{ id: string; name: string }>;
+  categories: BudgetCategoryOption[];
+  today: string;
 }
 
-export function EditBudgetDialog({
-  budget,
-  categories,
-}: EditBudgetDialogProps) {
+export function EditBudgetDialog({ budget, categories, today }: EditBudgetDialogProps) {
   const [open, setOpen] = useState(false);
+  const [formKey, setFormKey] = useState(0);
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
-
-  const [categoryId, setCategoryId] = useState(budget.categoryId);
-  const [amount, setAmount] = useState(budget.budgeted.toString());
-  const [period, setPeriod] = useState(budget.period);
-  const [startDate, setStartDate] = useState(budget.startDate);
-
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    startTransition(async () => {
-      const result = await updateBudgetAction({
-        budgetId: budget.budgetId,
-        categoryId,
-        amount,
-        period,
-        startDate,
-      });
-      if (result.success) {
-        toast.success("Budget updated");
-        setOpen(false);
-        router.refresh();
-      } else {
-        toast.error(result.error);
-      }
-    });
-  }
 
   function handleDelete() {
     startTransition(async () => {
@@ -85,73 +55,59 @@ export function EditBudgetDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        setOpen(o);
+        if (o) setFormKey((k) => k + 1);
+      }}
+    >
       <DialogTrigger asChild>
-        <Button variant="ghost" size="icon" className="size-8">
-          <Pencil className="size-3.5" />
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-8"
+          aria-label={`Edit ${budget.categoryLabel} budget`}
+        >
+          <Pencil />
         </Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Edit Budget</DialogTitle>
+          <DialogTitle>Edit budget</DialogTitle>
+          <DialogDescription>{budget.categoryLabel}</DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor={`category-${budget.budgetId}`}>Category</Label>
-            <Select value={categoryId} onValueChange={setCategoryId}>
-              <SelectTrigger id={`category-${budget.budgetId}`}>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {categories.map((cat) => (
-                  <SelectItem key={cat.id} value={cat.id}>
-                    {cat.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor={`amount-${budget.budgetId}`}>Amount</Label>
-            <Input
-              id={`amount-${budget.budgetId}`}
-              type="number"
-              step="0.01"
-              min="0"
-              placeholder="0.00"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              required
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor={`period-${budget.budgetId}`}>Period</Label>
-            <Select value={period} onValueChange={setPeriod}>
-              <SelectTrigger id={`period-${budget.budgetId}`}>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="weekly">Weekly</SelectItem>
-                <SelectItem value="monthly">Monthly</SelectItem>
-                <SelectItem value="yearly">Yearly</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor={`startDate-${budget.budgetId}`}>Start Date</Label>
-            <Input
-              id={`startDate-${budget.budgetId}`}
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              required
-            />
-          </div>
-
-          <div className="flex justify-between">
+        <BudgetForm
+          key={formKey}
+          categories={categories}
+          today={today}
+          initial={{
+            categoryKey: budget.categoryKey,
+            amount: budget.budgeted.toFixed(2),
+            period: budget.period,
+            startDate: budget.startDate,
+            endDate: budget.endDate ?? "",
+          }}
+          submitLabel="Save"
+          pendingLabel="Saving…"
+          isPending={isPending}
+          onCancel={() => setOpen(false)}
+          onSubmit={(values) =>
+            startTransition(async () => {
+              const result = await updateBudgetAction({
+                budgetId: budget.budgetId,
+                ...values,
+              });
+              if (result.success) {
+                toast.success("Budget updated");
+                setOpen(false);
+                router.refresh();
+              } else {
+                toast.error(result.error);
+              }
+            })
+          }
+          footerStart={
             <Button
               type="button"
               variant="destructive"
@@ -161,23 +117,8 @@ export function EditBudgetDialog({
             >
               Delete
             </Button>
-            <div className="flex gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setOpen(false)}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                disabled={isPending || !categoryId || !amount}
-              >
-                {isPending ? "Saving..." : "Save"}
-              </Button>
-            </div>
-          </div>
-        </form>
+          }
+        />
       </DialogContent>
     </Dialog>
   );
