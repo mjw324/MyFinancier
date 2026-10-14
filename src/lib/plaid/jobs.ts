@@ -142,7 +142,7 @@ async function renewLease(itemRowId: string, token: string): Promise<string | nu
   const rows = await db.execute<{ token: string }>(sql`
     UPDATE ${plaidItems}
     SET sync_lease_until = ${LEASE_SQL}
-    WHERE id = ${itemRowId} AND sync_lease_until = ${token}::timestamp
+    WHERE id = ${itemRowId} AND sync_lease_until = ${token}::text::timestamp
     RETURNING sync_lease_until::text AS token
   `);
   return rowsOf<{ token: string }>(rows)[0]?.token ?? null;
@@ -159,7 +159,7 @@ async function releaseLease(
   const rows = await db.execute<{ pending: boolean }>(sql`
     UPDATE ${plaidItems}
     SET sync_lease_until = NULL
-    WHERE id = ${itemRowId} AND sync_lease_until = ${token}::timestamp
+    WHERE id = ${itemRowId} AND sync_lease_until = ${token}::text::timestamp
     RETURNING (
       sync_requested_at > last_sync_started_at
       OR recurring_requested_at > last_sync_started_at

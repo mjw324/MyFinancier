@@ -235,7 +235,7 @@ async function applyRecurring(
 
   await tx
     .update(plaidItems)
-    .set({ recurringFetchedAt: sql`${fetchStartedAt}::timestamp` })
+    .set({ recurringFetchedAt: sql`${fetchStartedAt}::text::timestamp` })
     .where(eq(plaidItems.id, item.id));
 
   return {
