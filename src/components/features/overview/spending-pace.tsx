@@ -136,18 +136,20 @@ export function SpendingPace(props: SpendingPaceProps) {
                 <ChartLegend content={<ChartLegendContent />} />
                 <Line
                   dataKey="comparison"
-                  type="monotone"
+                  type="linear"
                   stroke="var(--color-comparison)"
                   strokeWidth={1.5}
                   dot={false}
+                  isAnimationActive={false}
                   connectNulls={false}
                 />
                 <Line
                   dataKey="current"
-                  type="monotone"
+                  type="linear"
                   stroke="var(--color-current)"
                   strokeWidth={2}
                   dot={false}
+                  isAnimationActive={false}
                   // Null after today: leave the rest of the month blank.
                   connectNulls={false}
                 />

@@ -134,14 +134,14 @@ export function CashFlowCard({ flow, title, range, previous }: CashFlowCardProps
               <dd
                 className={cn(
                   "mt-1 truncate text-xl font-semibold sm:text-2xl",
-                  t.negative && "text-destructive",
+                  t.negative && "text-destructive-foreground",
                 )}
               >
                 {t.value}
               </dd>
-              <dd className="mt-1 truncate text-xs text-muted-foreground">{t.note}</dd>
+              <dd className="mt-1 text-xs text-muted-foreground">{t.note}</dd>
               {t.delta && vs && (
-                <dd className="mt-1 truncate text-xs text-muted-foreground">
+                <dd className="mt-1 text-xs text-muted-foreground">
                   <span className="font-medium text-foreground">{t.delta}</span> {vs}
                 </dd>
               )}
@@ -153,7 +153,7 @@ export function CashFlowCard({ flow, title, range, previous }: CashFlowCardProps
         <p className="text-xs text-muted-foreground tabular-nums">
           {formatCurrency(flow.moneyIn)} in − {formatCurrency(flow.netSpending)} spending −{" "}
           {formatCurrency(flow.savedNet)} saved/moved ={" "}
-          <span className={cn("font-medium text-foreground", flow.netChange < 0 && "text-destructive")}>
+          <span className={cn("font-medium text-foreground", flow.netChange < 0 && "text-destructive-foreground")}>
             {signed(flow.netChange)}
           </span>
           {!previous && " · comparisons appear once a period is complete"}

@@ -39,7 +39,8 @@ export function PeriodSelect({ value }: { value: DashboardPeriodKey }) {
   return (
     <Select value={value} onValueChange={onChange} disabled={isPending}>
       <SelectTrigger size="sm" aria-label="Period" className="min-w-36">
-        <SelectValue />
+        {/* Children render the label on the server too, so it never flashes empty. */}
+        <SelectValue>{DASHBOARD_PERIOD_LABELS[value]}</SelectValue>
       </SelectTrigger>
       <SelectContent align="end">
         {DASHBOARD_PERIODS.map((key) => (

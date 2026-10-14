@@ -24,7 +24,7 @@ export function RouteError({
       <Card className="w-full max-w-md gap-4">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            <AlertCircle className="size-5 text-destructive" />
+            <AlertCircle className="size-5 text-destructive-foreground" />
             {title}
           </CardTitle>
         </CardHeader>

@@ -39,7 +39,7 @@ export function InsightList({ insights }: { insights: Insight[] }) {
                   <Icon
                     className={
                       insight.tone === "warning"
-                        ? "mt-0.5 size-4 shrink-0 text-destructive"
+                        ? "mt-0.5 size-4 shrink-0 text-destructive-foreground"
                         : "mt-0.5 size-4 shrink-0 text-muted-foreground"
                     }
                     aria-label={TONE_LABEL[insight.tone]}

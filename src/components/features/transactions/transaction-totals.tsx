@@ -55,7 +55,7 @@ export function TransactionTotals({
             ? "—"
             : `${netChange > 0 ? "+" : "−"}${formatCurrency(Math.abs(netChange))}`
         }
-        className={cn(netChange < 0 && "text-destructive")}
+        className={cn(netChange < 0 && "text-destructive-foreground")}
       />
     </div>
   );

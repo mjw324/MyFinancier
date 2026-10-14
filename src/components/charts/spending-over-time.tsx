@@ -140,7 +140,13 @@ export function SpendingOverTime({ data }: SpendingOverTimeProps) {
               )
             }
           />
-          <Bar dataKey="net" fill="var(--color-net)" radius={[3, 3, 0, 0]} maxBarSize={18} />
+          <Bar
+            dataKey="net"
+            fill="var(--color-net)"
+            radius={[3, 3, 0, 0]}
+            maxBarSize={18}
+            isAnimationActive={false}
+          />
           {selectStart && selectEnd && selectStart !== selectEnd && (
             <ReferenceArea
               x1={selectStart}
