@@ -1,29 +1,60 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
-import { usePlaidLink } from "react-plaid-link";
+import {
+  usePlaidLink,
+  type PlaidLinkOnSuccessMetadata,
+  type PlaidLinkError,
+} from "react-plaid-link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Loader2, Plus, RefreshCw } from "lucide-react";
+import { CalendarClock, Loader2, Plus, RefreshCw } from "lucide-react";
+import {
+  clearLinkSession,
+  completeLinkSession,
+  startLinkSession,
+  successMessage,
+  type LinkSession,
+} from "./plaid-link-flow";
+
+/** Which update-mode flow to open on an existing connection. */
+export type PlaidLinkAction = "reconnect" | "renew" | "add_accounts";
 
 interface PlaidLinkButtonProps {
+  /** Existing connection: opens Link in update mode instead of a new link. */
   plaidItemId?: string;
+  /** Update-mode flavour (default "reconnect"). "add_accounts" enables account selection. */
+  action?: PlaidLinkAction;
   children?: React.ReactNode;
-  variant?: "default" | "outline" | "ghost";
+  variant?: "default" | "outline" | "ghost" | "secondary";
   size?: "default" | "sm" | "lg" | "icon";
 }
 
+const LABELS: Record<PlaidLinkAction, string> = {
+  reconnect: "Reconnect",
+  renew: "Renew",
+  add_accounts: "Add accounts",
+};
+
 function PlaidLinkLauncher({
-  token,
+  session,
   onSuccess,
   onExit,
 }: {
-  token: string;
-  onSuccess: (publicToken: string | null, metadata: any) => void;
-  onExit: (error: any) => void;
+  session: LinkSession;
+  onSuccess: (
+    session: LinkSession,
+    publicToken: string | null,
+    metadata: PlaidLinkOnSuccessMetadata,
+  ) => void;
+  onExit: (session: LinkSession, error: PlaidLinkError | null) => void;
 }) {
-  const { open, ready } = usePlaidLink({ token, onSuccess, onExit });
+  const { open, ready } = usePlaidLink({
+    token: session.token,
+    onSuccess: (publicToken, metadata) => onSuccess(session, publicToken, metadata),
+    onExit: (error) => onExit(session, error),
+  });
 
   useEffect(() => {
     if (ready) open();
@@ -34,86 +65,92 @@ function PlaidLinkLauncher({
 
 export function PlaidLinkButton({
   plaidItemId,
+  action = "reconnect",
   children,
   variant = "default",
   size = "default",
 }: PlaidLinkButtonProps) {
   const router = useRouter();
-  const [linkToken, setLinkToken] = useState<string | null>(null);
+  const [session, setSession] = useState<LinkSession | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
+  const finish = useCallback(() => {
+    clearLinkSession();
+    setSession(null);
+  }, []);
+
   const onSuccess = useCallback(
-    async (publicToken: string | null, metadata: any) => {
-      if (!publicToken) {
-        toast.error("Failed to link account. Missing token.");
-        setLinkToken(null);
-        return;
-      }
+    async (
+      current: LinkSession,
+      publicToken: string | null,
+      metadata: PlaidLinkOnSuccessMetadata,
+    ) => {
+      setIsLoading(true);
       try {
-        const response = await fetch("/api/plaid/exchange-token", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            publicToken,
-            metadata: {
-              institution: {
-                name: metadata.institution?.name ?? "",
-                institutionId: metadata.institution?.institution_id ?? "",
-              },
-              accounts: (metadata.accounts ?? []).map((a: any) => ({
-                id: a.id,
-                name: a.name,
-                mask: a.mask,
-                type: a.type,
-                subtype: a.subtype,
-              })),
-            },
-          }),
-        });
-        const data = await response.json();
-        if (data.success) {
-          toast.success("Account linked successfully!");
-          router.refresh();
-        } else {
-          toast.error(data.error || "Failed to link account");
+        const outcome = await completeLinkSession(current, publicToken, metadata);
+
+        if (outcome.kind === "duplicate") {
+          // Already connected: reopen Link in update mode on that connection
+          // (with account selection) instead of creating a duplicate Item.
+          toast.info(outcome.message);
+          const next = await startLinkSession({
+            plaidItemId: outcome.existingPlaidItemId,
+            accountSelection: true,
+            returnTo: current.returnTo,
+          });
+          if (next.ok) {
+            setSession(next.session);
+          } else {
+            toast.error(next.message);
+            finish();
+          }
+          return;
         }
-      } catch {
-        toast.error("Failed to link account. Please try again.");
+
+        finish();
+        if (outcome.kind === "error") {
+          toast.error(outcome.message);
+          return;
+        }
+        toast.success(successMessage(outcome));
+        router.refresh();
       } finally {
-        setLinkToken(null);
+        setIsLoading(false);
       }
     },
-    [router],
+    [router, finish],
   );
 
-  const onExit = useCallback((error: any) => {
-    setLinkToken(null);
-    if (error) {
-      toast.error("Connection was interrupted. Please try again.");
-    }
-  }, []);
+  const onExit = useCallback(
+    (_current: LinkSession, error: PlaidLinkError | null) => {
+      finish();
+      if (error) {
+        toast.error("The bank connection was interrupted. Please try again.");
+      }
+    },
+    [finish],
+  );
 
   const handleClick = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch("/api/plaid/create-link-token", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(plaidItemId ? { plaidItemId } : {}),
+      const result = await startLinkSession({
+        plaidItemId,
+        accountSelection: plaidItemId ? action === "add_accounts" : undefined,
+        returnTo: window.location.pathname,
       });
-      const data = await res.json();
-      if (data.success) {
-        sessionStorage.setItem("plaid_link_token", data.data.linkToken);
-        setLinkToken(data.data.linkToken);
-      } else {
-        toast.error(data.error || "Failed to initialize connection");
-      }
-    } catch {
-      toast.error("Failed to connect. Please try again.");
+      if (result.ok) setSession(result.session);
+      else toast.error(result.message);
     } finally {
       setIsLoading(false);
     }
   };
+
+  const Icon = !plaidItemId || action === "add_accounts"
+    ? Plus
+    : action === "renew"
+      ? CalendarClock
+      : RefreshCw;
 
   return (
     <>
@@ -125,16 +162,15 @@ export function PlaidLinkButton({
       >
         {isLoading ? (
           <Loader2 className="size-4 animate-spin" />
-        ) : plaidItemId ? (
-          <RefreshCw className="size-4" />
         ) : (
-          <Plus className="size-4" />
+          <Icon className="size-4" />
         )}
-        {children ?? (plaidItemId ? "Reconnect" : "Link Account")}
+        {children ?? (plaidItemId ? LABELS[action] : "Link Account")}
       </Button>
-      {linkToken && (
+      {session && (
         <PlaidLinkLauncher
-          token={linkToken}
+          key={session.token}
+          session={session}
           onSuccess={onSuccess}
           onExit={onExit}
         />
