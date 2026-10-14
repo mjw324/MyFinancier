@@ -224,6 +224,16 @@ describe("item webhooks → status transitions (audit 2.6, verify-plaid N6)", ()
     expect(row.consentExpiresAt?.toISOString()).toBe("2027-04-20T20:32:50.000Z");
   });
 
+  it("LOGIN_REPAIRED clears any attention but never resurrects a revoked item", async () => {
+    await getTestDb().update(plaidItems).set({ attention: "pending_disconnect" }).where(eq(plaidItems.id, ITEM_ROW));
+    await deliver(itemHook("LOGIN_REPAIRED"));
+    expect(await item()).toMatchObject({ status: "active", attention: null });
+
+    await getTestDb().update(plaidItems).set({ status: "revoked", attention: "revoked" }).where(eq(plaidItems.id, ITEM_ROW));
+    await deliver(itemHook("LOGIN_REPAIRED"));
+    expect((await item()).status).toBe("revoked");
+  });
+
   it("NEW_ACCOUNTS_AVAILABLE → attention", async () => {
     await deliver(itemHook("NEW_ACCOUNTS_AVAILABLE"));
     expect(await item()).toMatchObject({ status: "active", attention: "new_accounts_available" });
@@ -231,6 +241,7 @@ describe("item webhooks → status transitions (audit 2.6, verify-plaid N6)", ()
 
   it("USER_PERMISSION_REVOKED → revoked", async () => {
     await deliver(itemHook("USER_PERMISSION_REVOKED"));
+    expect((await item()).attention).toBe("revoked");
     expect((await item()).status).toBe("revoked");
   });
 

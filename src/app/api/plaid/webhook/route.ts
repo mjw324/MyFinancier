@@ -6,6 +6,7 @@ import { plaidItems } from "@/lib/db/schema/plaid";
 import { financialAccounts } from "@/lib/db/schema/accounts";
 import { logError } from "@/lib/logging";
 import { drainItemSoon, statusForPlaidErrorCode } from "@/lib/plaid/jobs";
+import { terminalStatusListSql } from "@/lib/plaid/sync-requests";
 import {
   verifyPlaidWebhook,
   WebhookVerificationError,
@@ -190,15 +191,15 @@ async function handleWebhook(
         const id = await stampItem(itemId, {
           lastSyncErrorCode: errorCode ?? "ITEM_ERROR",
           ...(status ? { status } : {}),
-          ...(status === "login_required" ? { attention: "login_required" } : {}),
+          ...(status ? { attention: status } : {}),
         });
         return { itemRowId: id, action: status ?? "error-recorded" };
       }
       case "LOGIN_REPAIRED": {
-        // The item healed on its own: silence the reconnect prompt and sync.
+        // The item healed on its own: silence every prompt (W5 contract) and sync.
         const id = await stampItem(itemId, {
-          status: sql`CASE WHEN ${plaidItems.status} = 'login_required' THEN 'active' ELSE ${plaidItems.status} END`,
-          attention: sql`CASE WHEN ${plaidItems.attention} = 'login_required' THEN NULL ELSE ${plaidItems.attention} END`,
+          status: sql`CASE WHEN ${plaidItems.status} IN (${terminalStatusListSql}) THEN ${plaidItems.status} ELSE 'active' END`,
+          attention: null,
           lastSyncErrorCode: null,
           syncRequestedAt: sql`now()`,
         });
@@ -224,7 +225,7 @@ async function handleWebhook(
       case "USER_PERMISSION_REVOKED": {
         const id = await stampItem(itemId, {
           status: "revoked",
-          attention: null,
+          attention: "revoked",
           lastSyncErrorCode: "USER_PERMISSION_REVOKED",
         });
         return { itemRowId: id, action: "revoked" };
@@ -238,6 +239,7 @@ async function handleWebhook(
         if (!accountId) {
           const id = await stampItem(itemId, {
             status: "revoked",
+            attention: "revoked",
             lastSyncErrorCode: "USER_ACCOUNT_REVOKED",
           });
           return { itemRowId: id, action: "revoked" };

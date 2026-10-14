@@ -179,7 +179,7 @@ async function recordFailure(itemRowId: string, error: unknown): Promise<string>
     .set({
       lastSyncErrorCode: code,
       ...(status ? { status } : {}),
-      ...(status === "login_required" ? { attention: "login_required" } : {}),
+      ...(status ? { attention: status } : {}),
     })
     .where(eq(plaidItems.id, itemRowId));
   return code;
@@ -196,6 +196,7 @@ export async function drainItem(itemRowId: string): Promise<DrainResult> {
   let runs = 0;
   let recurringFetched = false;
   let errorCode: string | null = null;
+  const startedAt = Date.now();
 
   while (runs < MAX_RUNS_PER_DRAIN) {
     const claim = await claimLease(itemRowId);
@@ -263,6 +264,9 @@ export async function drainItem(itemRowId: string): Promise<DrainResult> {
     if (!released?.pending) break;
   }
 
+  console.log(
+    `[plaid-drain] ${JSON.stringify({ item: itemRowId.slice(0, 8), runs, ...totals, recurring: recurringFetched, error: errorCode, ms: Date.now() - startedAt })}`,
+  );
   return { status: "done", runs, totals, recurringFetched, errorCode };
 }
 

@@ -182,7 +182,7 @@ describe("drainItem", () => {
     plaid.transactionsSync.mockRejectedValue(plaidApiError("ITEM_NOT_FOUND", 400, "ITEM_ERROR"));
     await requestItemSync(ITEM);
     await drainItem(ITEM);
-    expect((await item()).status).toBe("revoked");
+    expect(await item()).toMatchObject({ status: "revoked", attention: "revoked", lastSyncErrorCode: "ITEM_NOT_FOUND" });
     await requestItemSync(ITEM);
     expect(await drainItem(ITEM)).toEqual({ status: "idle" });
     expect(plaid.transactionsSync).toHaveBeenCalledTimes(1);
