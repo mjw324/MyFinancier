@@ -51,6 +51,33 @@ afterAll(async () => {
   await pg.close();
 });
 
+/** The underlying PGlite instance (e.g. to build a second, instrumented drizzle handle). */
+export function getTestPg(): PGlite {
+  return pg;
+}
+
+/**
+ * Run `fn` with the app's `db` swapped for a drizzle handle on the same PGlite
+ * database that counts every statement it issues. Restores the normal handle.
+ */
+export async function countStatements<T>(
+  fn: () => Promise<T>,
+): Promise<{ result: T; statements: number; queries: string[] }> {
+  const queries: string[] = [];
+  const counting = drizzle({
+    client: pg,
+    schema,
+    logger: { logQuery: (query: string) => void queries.push(query) },
+  });
+  setTestDb(counting as unknown as Parameters<typeof setTestDb>[0]);
+  try {
+    const result = await fn();
+    return { result, statements: queries.length, queries };
+  } finally {
+    setTestDb(testDb as unknown as Parameters<typeof setTestDb>[0]);
+  }
+}
+
 /** The PGlite db typed as the app's DbExecutor (structurally compatible at runtime). */
 export function getTestExecutor(): import("@/lib/db").DbExecutor {
   return testDb as unknown as import("@/lib/db").DbExecutor;

@@ -1,5 +1,5 @@
 import { and, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
-import { db } from "@/lib/db";
+import { db, type DbExecutor } from "@/lib/db";
 import { transactions } from "@/lib/db/schema/transactions";
 import { recurringStreams } from "@/lib/db/schema/recurring";
 import { spendingRules } from "@/lib/db/schema/spending-rules";
@@ -164,7 +164,8 @@ export async function classifyTransaction(
             eq(recurringStreams.userId, userId),
           ),
         );
-      // Apply to every transaction in the stream that is not an override.
+      // Apply to every transaction in the stream that is not an override
+      // (transfers and inflows excluded, as in applySpendingClassifications).
       await tx
         .update(transactions)
         .set({ spendingType, spendingTypeSource: "stream" })
@@ -172,6 +173,8 @@ export async function classifyTransaction(
           and(
             eq(transactions.userId, userId),
             eq(transactions.recurringStreamId, row.recurringStreamId),
+            eq(transactions.isTransfer, false),
+            sql`${transactions.amount}::numeric >= 0`,
             or(
               isNull(transactions.spendingTypeSource),
               ne(transactions.spendingTypeSource, "override"),
@@ -247,6 +250,7 @@ async function applyRuleToTransactions(
       : transactions.nameSignature;
   // Skip rows under a classified stream — the stream wins.
   // Skip rows whose source is 'override' or 'manual'.
+  // Skip transfers and inflows: they are not spending (audit 8.2).
   await exec
     .update(transactions)
     .set({ spendingType, spendingTypeSource: "rule" })
@@ -254,6 +258,8 @@ async function applyRuleToTransactions(
       and(
         eq(transactions.userId, userId),
         eq(matchColumn, matchValue),
+        eq(transactions.isTransfer, false),
+        sql`${transactions.amount}::numeric >= 0`,
         or(
           isNull(transactions.spendingTypeSource),
           and(
@@ -425,51 +431,74 @@ export async function deleteSpendingRule(
   });
 }
 
+const CLASSIFY_ID_CHUNK = 5000;
+
+/**
+ * Re-derive automatic spending types in one set-based UPDATE per chunk.
+ *
+ * Precedence: classified recurring stream → merchant rule → name-signature
+ * rule → none. Rows the user owns (source manual/override) are never touched.
+ * Transfers and inflows (amount < 0) never carry an automatic spending type:
+ * one left over from before is cleared. The IS DISTINCT FROM guard means rows
+ * whose derived value is unchanged are neither written nor locked.
+ *
+ * Returns the number of rows changed.
+ */
 export async function applySpendingClassifications(
   userId: string,
   transactionIds?: string[],
-): Promise<void> {
-  // Cascade: stream → merchant rule → name_signature rule → null
-  // Skip rows where source ∈ {manual, override}
-  if (transactionIds && transactionIds.length === 0) return;
+  executor: DbExecutor = db,
+): Promise<number> {
+  if (transactionIds && transactionIds.length === 0) return 0;
+  const chunks = transactionIds
+    ? Array.from(
+        { length: Math.ceil(transactionIds.length / CLASSIFY_ID_CHUNK) },
+        (_, i) => transactionIds.slice(i * CLASSIFY_ID_CHUNK, (i + 1) * CLASSIFY_ID_CHUNK),
+      )
+    : [null];
 
-  await db.transaction(async (tx) => {
-    const baseConds = [
-      eq(transactions.userId, userId),
-      eq(transactions.isTransfer, false),
-      or(
-        isNull(transactions.spendingTypeSource),
-        and(
-          ne(transactions.spendingTypeSource, "manual"),
-          ne(transactions.spendingTypeSource, "override"),
-        ),
-      ),
-    ];
-    const conds = transactionIds
-      ? [...baseConds, inArray(transactions.id, transactionIds)]
-      : baseConds;
-
-    const rows = await tx
-      .select({ id: transactions.id })
-      .from(transactions)
-      .where(and(...conds));
-
-    for (const row of rows) {
-      const derived = await deriveForTransaction(tx, userId, row.id);
-      if (derived.spendingType && derived.source) {
-        await tx
-          .update(transactions)
-          .set({
-            spendingType: derived.spendingType,
-            spendingTypeSource: derived.source,
-          })
-          .where(eq(transactions.id, row.id));
-      } else {
-        await tx
-          .update(transactions)
-          .set({ spendingType: null, spendingTypeSource: null })
-          .where(eq(transactions.id, row.id));
-      }
-    }
-  });
+  let changed = 0;
+  for (const ids of chunks) {
+    const idFilter = ids
+      ? sql`AND c.id IN (${sql.join(ids.map((id) => sql`${id}`), sql`, `)})`
+      : sql``;
+    const result = await executor.execute<{ id: string }>(sql`
+      UPDATE ${transactions} AS t
+      SET spending_type = d.new_type, spending_type_source = d.new_source
+      FROM (
+        SELECT c.id,
+          CASE
+            WHEN c.is_transfer OR c.amount::numeric < 0 THEN NULL
+            WHEN s.spending_type IS NOT NULL THEN s.spending_type
+            WHEN mr.spending_type IS NOT NULL THEN mr.spending_type
+            WHEN sr.spending_type IS NOT NULL THEN sr.spending_type
+          END AS new_type,
+          CASE
+            WHEN c.is_transfer OR c.amount::numeric < 0 THEN NULL
+            WHEN s.spending_type IS NOT NULL THEN 'stream'
+            WHEN mr.spending_type IS NOT NULL THEN 'rule'
+            WHEN sr.spending_type IS NOT NULL THEN 'rule'
+          END AS new_source
+        FROM ${transactions} AS c
+        LEFT JOIN ${recurringStreams} AS s
+          ON s.stream_id = c.recurring_stream_id
+        LEFT JOIN ${spendingRules} AS mr
+          ON mr.user_id = c.user_id AND mr.match_type = 'merchant'
+         AND mr.match_value = c.normalized_merchant
+        LEFT JOIN ${spendingRules} AS sr
+          ON sr.user_id = c.user_id AND sr.match_type = 'name_signature'
+         AND sr.match_value = c.name_signature
+        WHERE c.user_id = ${userId}
+          AND (c.spending_type_source IS NULL OR c.spending_type_source NOT IN ('manual', 'override'))
+          ${idFilter}
+      ) AS d
+      WHERE t.id = d.id
+        AND (t.spending_type, t.spending_type_source) IS DISTINCT FROM (d.new_type, d.new_source)
+      RETURNING t.id
+    `);
+    changed += Array.isArray(result)
+      ? result.length
+      : ((result as { rows?: unknown[] }).rows?.length ?? 0);
+  }
+  return changed;
 }

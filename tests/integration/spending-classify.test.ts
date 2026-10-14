@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { eq } from "drizzle-orm";
-import { getTestDb } from "../setup/pglite";
+import { eq, sql } from "drizzle-orm";
+import { countStatements, getTestDb } from "../setup/pglite";
 import { user } from "@/lib/db/schema/auth";
 import { plaidItems } from "@/lib/db/schema/plaid";
 import { financialAccounts } from "@/lib/db/schema/accounts";
@@ -397,5 +397,98 @@ describe("clearStreamClassification", () => {
     expect((await getTxn("tS_a")).spendingTypeSource).toBeNull();
     expect((await getTxn("tS_b")).spendingType).toBe("discretionary");
     expect((await getTxn("tS_b")).spendingTypeSource).toBe("override");
+  });
+});
+
+describe("applySpendingClassifications — set-based (audit 8.1, 8.2; verify-calcs N15)", () => {
+  async function xmin(id: string) {
+    const res = await getTestDb().execute(sql`SELECT xmin::text AS x FROM transactions WHERE id = ${id}`);
+    return (res as unknown as { rows: Array<{ x: string }> }).rows[0].x;
+  }
+
+  beforeEach(async () => {
+    const db = getTestDb();
+    await db.insert(recurringStreams).values({
+      streamId: "s_set",
+      userId: USER,
+      plaidItemId: "pi_c",
+      accountId: "acct_c",
+      flowType: "outflow",
+      description: "Gym",
+      frequency: "MONTHLY",
+      status: "MATURE",
+      isActive: true,
+      averageAmount: "30",
+      lastAmount: "30",
+      spendingType: "necessary",
+    });
+    await db.insert(spendingRules).values({
+      userId: USER,
+      matchType: "merchant",
+      matchValue: "coffee shop",
+      spendingType: "discretionary",
+    });
+  });
+
+  it("clears automatic spending types on transfers and inflows, never touching manual rows", async () => {
+    const db = getTestDb();
+    await db.insert(transactions).values([
+      // A transfer that a rule classified before the guard existed.
+      makeTxn({ id: "tXfer", userId: USER, accountId: "acct_c", normalizedMerchant: "coffee shop", isTransfer: true, spendingType: "discretionary", spendingTypeSource: "rule" }),
+      // A refund inside a classified stream.
+      makeTxn({ id: "tInflow", userId: USER, accountId: "acct_c", amount: "-30.00", recurringStreamId: "s_set", spendingType: "necessary", spendingTypeSource: "stream" }),
+      // A user's own call on an inflow is kept.
+      makeTxn({ id: "tManualInflow", userId: USER, accountId: "acct_c", amount: "-5.00", spendingType: "discretionary", spendingTypeSource: "manual" }),
+      makeTxn({ id: "tSpend", userId: USER, accountId: "acct_c", normalizedMerchant: "coffee shop" }),
+    ]);
+    const changed = await applySpendingClassifications(USER);
+    expect(changed).toBe(3);
+    expect(await getTxn("tXfer")).toMatchObject({ spendingType: null, spendingTypeSource: null });
+    expect(await getTxn("tInflow")).toMatchObject({ spendingType: null, spendingTypeSource: null });
+    expect(await getTxn("tManualInflow")).toMatchObject({ spendingType: "discretionary", spendingTypeSource: "manual" });
+    expect(await getTxn("tSpend")).toMatchObject({ spendingType: "discretionary", spendingTypeSource: "rule" });
+  });
+
+  it("does not rewrite (or lock) rows whose classification is unchanged, in one statement", async () => {
+    const db = getTestDb();
+    await db.insert(transactions).values([
+      makeTxn({ id: "tA", userId: USER, accountId: "acct_c", recurringStreamId: "s_set" }),
+      makeTxn({ id: "tB", userId: USER, accountId: "acct_c", normalizedMerchant: "coffee shop" }),
+      makeTxn({ id: "tC", userId: USER, accountId: "acct_c" }),
+    ]);
+    await applySpendingClassifications(USER, ["tA", "tB", "tC"]);
+    const before = [await xmin("tA"), await xmin("tB"), await xmin("tC")];
+
+    const { result, statements } = await countStatements(() =>
+      applySpendingClassifications(USER, ["tA", "tB", "tC"]),
+    );
+
+    expect(result).toBe(0);
+    expect(statements).toBe(1);
+    expect([await xmin("tA"), await xmin("tB"), await xmin("tC")]).toEqual(before);
+  });
+
+  it("only touches the requested ids", async () => {
+    const db = getTestDb();
+    await db.insert(transactions).values([
+      makeTxn({ id: "tIn", userId: USER, accountId: "acct_c", normalizedMerchant: "coffee shop" }),
+      makeTxn({ id: "tOut", userId: USER, accountId: "acct_c", normalizedMerchant: "coffee shop" }),
+    ]);
+    await applySpendingClassifications(USER, ["tIn"]);
+    expect((await getTxn("tIn")).spendingTypeSource).toBe("rule");
+    expect((await getTxn("tOut")).spendingTypeSource).toBeNull();
+  });
+
+  it("merchant-scope rules skip transfers and inflows", async () => {
+    const db = getTestDb();
+    await db.insert(transactions).values([
+      makeTxn({ id: "tBuy", userId: USER, accountId: "acct_c", normalizedMerchant: "bookstore" }),
+      makeTxn({ id: "tBuyXfer", userId: USER, accountId: "acct_c", normalizedMerchant: "bookstore", isTransfer: true }),
+      makeTxn({ id: "tBuyRefund", userId: USER, accountId: "acct_c", normalizedMerchant: "bookstore", amount: "-10.00" }),
+    ]);
+    await classifyTransaction(USER, "tBuy", "discretionary", "merchant");
+    expect((await getTxn("tBuy")).spendingTypeSource).toBe("rule");
+    expect((await getTxn("tBuyXfer")).spendingType).toBeNull();
+    expect((await getTxn("tBuyRefund")).spendingType).toBeNull();
   });
 });
