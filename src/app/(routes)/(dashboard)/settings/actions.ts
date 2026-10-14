@@ -85,12 +85,13 @@ export async function unlinkPlaidItemAction(plaidItemId: unknown) {
   try {
     ({ partnerIds } = await deletePlaidItemData(userId, item.id));
   } catch (error) {
-    // Plaid already forgot the item: make sure nothing syncs it again, keep
-    // the lease, and let the user retry the cleanup.
+    // Plaid already forgot the item: mark it terminal so nothing syncs it
+    // again (a terminal item is never claimed), free the lease, and let the
+    // user retry the cleanup.
     logError("plaid-unlink.delete-failed", error, { plaidItemRowId: item.id });
     await db
       .update(plaidItems)
-      .set({ status: "removed" })
+      .set({ status: "removed", syncLeaseUntil: null })
       .where(eq(plaidItems.id, item.id))
       .catch(() => undefined);
     return {
