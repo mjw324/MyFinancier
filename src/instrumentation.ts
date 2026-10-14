@@ -26,29 +26,36 @@ export function shouldStartSweep(env: NodeJS.ProcessEnv = process.env): boolean 
 }
 
 export async function register(): Promise<void> {
-  if (!shouldStartSweep()) return;
-  if (globalThis.__plaidSweepStarted) return; // dev-server reloads
-  globalThis.__plaidSweepStarted = true;
+  // The runtime check must wrap the import itself so the Edge build drops it
+  // (Next.js docs: "Importing runtime-specific code").
+  if (process.env.NEXT_RUNTIME === "nodejs") {
+    if (!shouldStartSweep()) return;
+    if (globalThis.__plaidSweepStarted) return; // dev-server reloads
+    globalThis.__plaidSweepStarted = true;
 
-  const { sweepPlaidItems } = await import("./lib/plaid/jobs");
-  const { logError } = await import("./lib/logging");
+    const { sweepPlaidItems } = await import("./lib/plaid/jobs");
+    const { logError } = await import("./lib/logging");
 
-  let running = false;
-  const tick = async () => {
-    if (running) return;
-    running = true;
-    try {
-      const { requested, drained } = await sweepPlaidItems();
-      if (requested > 0 || drained > 0) {
-        console.log(`[plaid-sweep] ${JSON.stringify({ requested, drained })}`);
+    let running = false;
+    const tick = async () => {
+      if (running) return;
+      running = true;
+      try {
+        const { requested, drained } = await sweepPlaidItems();
+        if (requested > 0 || drained > 0) {
+          console.log(`[plaid-sweep] ${JSON.stringify({ requested, drained })}`);
+        }
+      } catch (error) {
+        logError("plaid-sweep.failed", error);
+      } finally {
+        running = false;
       }
-    } catch (error) {
-      logError("plaid-sweep.failed", error);
-    } finally {
-      running = false;
-    }
-  };
+    };
 
-  setTimeout(() => void tick(), SWEEP_INITIAL_DELAY_MS).unref();
-  setInterval(() => void tick(), SWEEP_INTERVAL_MS).unref();
+    setTimeout(() => void tick(), SWEEP_INITIAL_DELAY_MS).unref();
+    setInterval(() => void tick(), SWEEP_INTERVAL_MS).unref();
+    console.log(
+      `[plaid-sweep] scheduled: first run in ${SWEEP_INITIAL_DELAY_MS / 1000}s, then every ${SWEEP_INTERVAL_MS / 60_000} min`,
+    );
+  }
 }
