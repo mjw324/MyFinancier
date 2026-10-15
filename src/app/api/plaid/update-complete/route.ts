@@ -8,6 +8,7 @@ import {
 } from "@/lib/plaid/link";
 import { ITEM_NOT_HEALTHY_CODE, plaidErrorMessage } from "@/lib/plaid/types";
 import { describeError, logError, plaidErrorCode } from "@/lib/logging";
+import { drainItemSoon } from "@/lib/plaid/jobs";
 
 // Called by the client after Plaid Link update mode succeeds. The update-mode
 // public_token is NOT exchanged: the access token does not change.
@@ -40,6 +41,8 @@ export async function POST(request: Request) {
     const data = await completeItemUpdate(session.user.id, plaidItemId, {
       accountSelection,
     });
+    // Sync + recurring were requested inside the update transaction.
+    drainItemSoon(plaidItemId);
     return NextResponse.json({ success: true, data });
   } catch (error) {
     if (error instanceof PlaidItemNotFoundError) {

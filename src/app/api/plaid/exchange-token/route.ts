@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getServerSession } from "@/lib/auth/get-session";
 import { DuplicateItemError, exchangePublicToken } from "@/lib/plaid/link";
+import { drainItemSoon } from "@/lib/plaid/jobs";
 import { DUPLICATE_ITEM_CODE, plaidErrorMessage } from "@/lib/plaid/types";
 import { logError, plaidErrorCode } from "@/lib/logging";
 
@@ -64,6 +65,9 @@ export async function POST(request: Request) {
     // The new Item carries a pending sync request (sync_requested_at); the
     // sync worker drains it. There is no inline sync any more: Plaid has no
     // transactions ready this early, so it only ever saved an empty cursor.
+    // The sync request was stamped inside the exchange transaction; start the
+    // worker now instead of waiting for the recovery sweep.
+    drainItemSoon(data.plaidItemId);
     return NextResponse.json({ success: true, data });
   } catch (error) {
     if (error instanceof DuplicateItemError) {
