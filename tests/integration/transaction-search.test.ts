@@ -7,7 +7,9 @@ import { transactions } from "@/lib/db/schema/transactions";
 import {
   searchTransactions,
   getTransactionCount,
+  getTransactionTotals,
 } from "@/lib/db/queries/transactions";
+import { parseTransactionQuery } from "@/lib/transactions/query";
 import {
   makeUser,
   makePlaidItem,
@@ -175,5 +177,64 @@ describe("getTransactionCount", () => {
     expect(
       await getTransactionCount(USER_B, { category: "FOOD_AND_DRINK" }),
     ).toBe(1);
+  });
+});
+
+describe("date filters use calendar dates in UTC", () => {
+  it("includes the whole end day and nothing after it", async () => {
+    const db = getTestDb();
+    await db.insert(transactions).values([
+      makeTxn({ id: "d_last", userId: USER_A, accountId: "acct_checking", plaidTransactionId: "pd1", date: new Date("2026-05-31T00:00:00Z") }),
+      makeTxn({ id: "d_next", userId: USER_A, accountId: "acct_checking", plaidTransactionId: "pd2", date: new Date("2026-06-01T00:00:00Z") }),
+    ]);
+    const q = parseTransactionQuery({ from: "2026-05-01", to: "2026-05-31" });
+    const rows = await searchTransactions(USER_A, q.filters);
+    expect(rows.map((r) => r.id)).toEqual(["d_last"]);
+  });
+
+  it("an invalid ?from= is ignored instead of crashing the query", async () => {
+    const q = parseTransactionQuery({ from: "garbage" });
+    expect(q.invalid).toEqual(["from"]);
+    await expect(searchTransactions(USER_A, q.filters)).resolves.toHaveLength(3);
+    await expect(getTransactionTotals(USER_A, q.filters)).resolves.toMatchObject({ count: 3 });
+  });
+});
+
+describe("pagination is stable", () => {
+  it("orders same-day rows by id so pages never repeat or skip rows", async () => {
+    const db = getTestDb();
+    await db.delete(transactions);
+    const ids = Array.from({ length: 30 }, (_, i) => `p_${String(i).padStart(2, "0")}`);
+    await db.insert(transactions).values(
+      ids.map((id) =>
+        makeTxn({ id, userId: USER_A, accountId: "acct_checking", plaidTransactionId: `pt_${id}`, date: new Date("2026-04-10T00:00:00Z") }),
+      ),
+    );
+    const pages = [];
+    for (let page = 0; page < 3; page++) {
+      pages.push(...(await searchTransactions(USER_A, {}, { limit: 10, offset: page * 10 })).map((r) => r.id));
+    }
+    expect(new Set(pages).size).toBe(30);
+    expect(pages).toEqual([...ids].sort().reverse());
+  });
+});
+
+describe("hide transfers uses the flow class", () => {
+  it("hides internal and savings rows, keeps spending, and counts match the list", async () => {
+    const db = getTestDb();
+    await db.insert(transactions).values([
+      makeTxn({ id: "h_cc", userId: USER_A, accountId: "acct_checking", plaidTransactionId: "ph1", flowClass: "cc_payment", amount: "300.00" }),
+      makeTxn({ id: "h_save", userId: USER_A, accountId: "acct_checking", plaidTransactionId: "ph2", flowClass: "external_transfer_out", amount: "100.00" }),
+      // Legacy flag says transfer, but the classifier says it is a payment to a person.
+      makeTxn({ id: "h_p2p", userId: USER_A, accountId: "acct_checking", plaidTransactionId: "ph3", flowClass: "p2p_payment", amount: "20.00", isTransfer: true }),
+    ]);
+    const filters = { includeTransfers: false };
+    const rows = await searchTransactions(USER_A, filters, { limit: 100 });
+    expect(rows.map((r) => r.id)).not.toContain("h_cc");
+    expect(rows.map((r) => r.id)).not.toContain("h_save");
+    expect(rows.map((r) => r.id)).toContain("h_p2p");
+    const totals = await getTransactionTotals(USER_A, filters);
+    expect(totals.count).toBe(rows.length);
+    expect(totals.count).toBe(await getTransactionCount(USER_A, filters));
   });
 });

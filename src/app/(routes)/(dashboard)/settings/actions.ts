@@ -43,7 +43,7 @@ function revalidateItemPages() {
   revalidatePath("/accounts");
   revalidatePath("/transactions");
   revalidatePath("/dashboard");
-  revalidatePath("/");
+  revalidatePath("/dashboard");
 }
 
 /**
@@ -174,7 +174,7 @@ export async function resetTransactionCustomizationsAction() {
 
   revalidatePath("/transactions");
   revalidatePath("/settings");
-  revalidatePath("/");
+  revalidatePath("/dashboard");
   return { success: true as const };
 }
 

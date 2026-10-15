@@ -1,4 +1,5 @@
 import { type Metadata } from "next";
+import { redirect } from "next/navigation";
 import { getServerSession } from "@/lib/auth/get-session";
 import {
   searchTransactions,
@@ -10,7 +11,16 @@ import {
 } from "@/lib/db/queries/transactions";
 import { getAccountsByUserId } from "@/lib/db/queries/accounts";
 import { getUserPreferences } from "@/lib/db/queries/user-preferences";
-import { TransactionFilters as TransactionFiltersUI } from "@/components/features/transactions/transaction-filters";
+import { FLOW_CLASS_LABEL } from "@/lib/analytics/flow";
+import { bucketLabel } from "@/lib/analytics/labels";
+import {
+  parseTransactionQuery,
+  type ParsedTransactionQuery,
+} from "@/lib/transactions/query";
+import {
+  TransactionFilters as TransactionFiltersUI,
+  type FilterChip,
+} from "@/components/features/transactions/transaction-filters";
 import { TransactionsTable } from "@/components/features/transactions/transactions-table";
 import { TransactionTotals } from "@/components/features/transactions/transaction-totals";
 import { Pagination } from "@/components/features/transactions/pagination";
@@ -22,43 +32,39 @@ export const metadata: Metadata = {
 
 const PAGE_SIZE = 25;
 
+/** Chips for drill-down filters that have no dedicated control. */
+function drillDownChips(q: ParsedTransactionQuery): FilterChip[] {
+  const f = q.filters;
+  const chips: FilterChip[] = [];
+  if (f.bucket) chips.push({ param: "bucket", label: `Spending: ${bucketLabel(f.bucket)}` });
+  if (f.flowClass) chips.push({ param: "flowClass", label: FLOW_CLASS_LABEL[f.flowClass] });
+  if (f.counterparty) chips.push({ param: "counterparty", label: `Merchant: ${f.counterparty}` });
+  if (f.view === "spending") {
+    chips.push({ param: "view", label: "Spending, net of refunds & reimbursements" });
+  }
+  if (f.cost) chips.push({ param: "cost", label: f.cost === "fixed" ? "Fixed costs" : "Variable costs" });
+  return chips;
+}
+
 export default async function TransactionsPage({
   searchParams,
 }: {
-  searchParams: Promise<Record<string, string | undefined>>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const session = await getServerSession();
-  const userId = session!.user.id;
-  const params = await searchParams;
+  if (!session?.user) redirect("/signin");
+  const userId = session.user.id;
 
-  const recurringParam =
-    params.recurring === "recurring" || params.recurring === "onetime"
-      ? params.recurring
-      : undefined;
-
-  const spendingTypeParam =
-    params.spendingType === "necessary" ||
-    params.spendingType === "discretionary" ||
-    params.spendingType === "unclassified"
-      ? params.spendingType
-      : undefined;
-
+  const query = parseTransactionQuery(await searchParams);
   const prefs = await getUserPreferences(userId);
 
   const filters: TransactionFilters = {
-    search: params.search || undefined,
-    accountId: params.account || undefined,
-    category: params.category || undefined,
-    startDate: params.from ? new Date(params.from) : undefined,
-    endDate: params.to ? new Date(params.to) : undefined,
-    recurring: recurringParam,
-    spendingType: spendingTypeParam,
+    ...query.filters,
     includeTransfers: !prefs.hideTransfersFromList,
   };
 
-  const currentPage = Math.max(1, parseInt(params.page ?? "1", 10) || 1);
+  const currentPage = query.page;
   const offset = (currentPage - 1) * PAGE_SIZE;
-
   const filtersActive = hasActiveFilters(filters);
 
   const [transactions, totalCount, accounts, categoryNames, totals] =
@@ -76,7 +82,7 @@ export default async function TransactionsPage({
   const categoryOptions = categoryNames.map((name) => ({ id: name, name }));
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-6">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold">Transactions</h2>
@@ -90,27 +96,39 @@ export default async function TransactionsPage({
       <TransactionFiltersUI
         accounts={accountOptions}
         categories={categoryOptions}
+        chips={drillDownChips(query)}
       />
+
+      {query.invalid.length > 0 && (
+        <p className="text-sm text-muted-foreground" role="status">
+          Ignored an invalid filter value for: {query.invalid.join(", ")}.
+        </p>
+      )}
 
       {totals && (
         <TransactionTotals
           count={totals.count}
-          income={totals.income}
-          expenses={totals.expenses}
-          net={totals.net}
+          moneyIn={totals.moneyIn}
+          netSpending={totals.netSpending}
+          offsets={totals.offsets}
+          savedNet={totals.savedNet}
+          netChange={totals.netChange}
+          uncounted={totals.unclassifiedCount + totals.stalePendingCount}
+          transfersHidden={prefs.hideTransfersFromList}
         />
       )}
 
       <TransactionsTable
         transactions={transactions}
         categories={categoryNames}
+        flowLabels={FLOW_CLASS_LABEL}
       />
 
       <Pagination
         currentPage={currentPage}
         totalPages={totalPages}
         basePath="/transactions"
-        searchParams={params}
+        searchParams={query.params}
       />
     </div>
   );

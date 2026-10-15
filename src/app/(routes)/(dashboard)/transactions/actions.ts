@@ -142,7 +142,7 @@ export async function updateTransactionOverridesAction(
   }
 
   revalidatePath("/transactions");
-  revalidatePath("/");
+  revalidatePath("/dashboard");
   revalidateFlowPages();
   return { success: true as const };
 }
@@ -195,7 +195,7 @@ export async function setTransactionRefundAction(
   await refreshSpendingTypes(userId, result.changedIds);
 
   revalidatePath("/transactions");
-  revalidatePath("/");
+  revalidatePath("/dashboard");
   revalidateFlowPages();
   return { success: true as const };
 }
@@ -258,7 +258,7 @@ export async function classifyTransactionAction(
   }
 
   revalidatePath("/transactions");
-  revalidatePath("/");
+  revalidatePath("/dashboard");
   revalidatePath("/settings");
   return { success: true as const };
 }
@@ -293,7 +293,7 @@ export async function clearTransactionClassificationAction(
 
   await clearTxClassification(userId, parsed.data.transactionId);
   revalidatePath("/transactions");
-  revalidatePath("/");
+  revalidatePath("/dashboard");
   return { success: true as const };
 }
 
@@ -327,7 +327,7 @@ export async function clearStreamClassificationAction(
 
   await clearStreamClassificationCore(userId, parsed.data.streamId);
   revalidatePath("/transactions");
-  revalidatePath("/");
+  revalidatePath("/dashboard");
   revalidatePath("/settings");
   return { success: true as const };
 }
@@ -362,7 +362,7 @@ export async function deleteSpendingRuleAction(
 
   await deleteSpendingRuleCore(userId, parsed.data.ruleId);
   revalidatePath("/transactions");
-  revalidatePath("/");
+  revalidatePath("/dashboard");
   revalidatePath("/settings");
   return { success: true as const };
 }

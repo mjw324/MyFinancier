@@ -1,214 +1,150 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
+import ExcelJS from "exceljs";
 import { getTestDb } from "../setup/pglite";
 import { user } from "@/lib/db/schema/auth";
 import { plaidItems } from "@/lib/db/schema/plaid";
 import { financialAccounts } from "@/lib/db/schema/accounts";
 import { transactions } from "@/lib/db/schema/transactions";
-import { getOverviewStats, getSpendingByCategory } from "@/lib/db/queries/overview";
-import { getTransactionTotals } from "@/lib/db/queries/transactions";
-import { aggregateIncomeAndExpenses, aggregateBySpendingType } from "@/lib/utils/aggregations";
-import { makeUser, makePlaidItem, makeAccount, makeTxn } from "../setup/factories";
+import { getCashFlow, getSpendingByBucket, periodScope } from "@/lib/analytics/metrics";
+import { resolveDashboardPeriod, periodToRange } from "@/lib/utils/date-ranges";
+import {
+  getTransactionCount,
+  getTransactionTotals,
+  searchTransactions,
+  type TransactionFilters,
+} from "@/lib/db/queries/transactions";
+import { parseTransactionQuery } from "@/lib/transactions/query";
+import { buildTransactionsWorkbook } from "@/lib/transactions/export";
+import { makeAccount, makePlaidItem, makeTxn, makeUser } from "../setup/factories";
 
 const USER = "u_consist";
-
-/** A month containing a refund and a category override — the two things that
- *  made the dashboard and the transactions page disagree. */
-const MONTH_START = new Date("2026-08-01T00:00:00Z");
-const MONTH_END = new Date("2026-08-31T23:59:59Z");
+const day = (iso: string) => new Date(`${iso}T00:00:00Z`);
+// "Last month" as the dashboard resolves it when the viewer's today is 2026-09-10.
+const PERIOD = resolveDashboardPeriod("last-month", day("2026-09-10"));
 
 beforeEach(async () => {
-  // getOverviewStats reads the calendar month from the clock, so the clock has
-  // to be inside the month being seeded. Fake Date only; real timers keep
-  // PGlite's async working.
-  vi.useFakeTimers({ toFake: ["Date"] });
-  vi.setSystemTime(new Date("2026-08-20T12:00:00Z"));
-
   const db = getTestDb();
   await db.insert(user).values([makeUser({ id: USER, email: "c@test.local" })]);
-  await db
-    .insert(plaidItems)
-    .values([makePlaidItem({ id: "pi", userId: USER, itemId: "item" })]);
+  await db.insert(plaidItems).values([makePlaidItem({ id: "pi", userId: USER, itemId: "item" })]);
   await db.insert(financialAccounts).values([
-    makeAccount({
-      id: "acct",
-      userId: USER,
-      plaidItemId: "pi",
-      plaidAccountId: "pa",
-      currentBalance: "1000.00",
-    }),
+    makeAccount({ id: "acct", userId: USER, plaidItemId: "pi" }),
+    makeAccount({ id: "card", userId: USER, plaidItemId: "pi", type: "credit" }),
   ]);
+  const t = (id: string, amount: string, flowClass: string | null, date: string, over = {}) =>
+    makeTxn({ id, userId: USER, accountId: "acct", amount, flowClass, date: day(date), ...over });
   await db.insert(transactions).values([
-    makeTxn({
-      id: "t_buy",
-      userId: USER,
-      accountId: "acct",
-      plaidTransactionId: "p1",
-      amount: "846.20",
-      category: "GENERAL_MERCHANDISE",
-      date: new Date("2026-08-05T00:00:00Z"),
-    }),
-    // The refund that used to read as income on one screen and reduced
-    // spending on the other.
-    makeTxn({
-      id: "t_refund",
-      userId: USER,
-      accountId: "acct",
-      plaidTransactionId: "p2",
-      amount: "-846.20",
-      category: "GENERAL_MERCHANDISE",
-      date: new Date("2026-08-06T00:00:00Z"),
-      isRefund: true,
-      refundSource: "auto",
-    }),
-    makeTxn({
-      id: "t_food",
-      userId: USER,
-      accountId: "acct",
-      plaidTransactionId: "p3",
-      amount: "55.30",
-      category: "FOOD_AND_DRINK",
-      date: new Date("2026-08-10T00:00:00Z"),
-    }),
-    makeTxn({
-      id: "t_pay",
-      userId: USER,
-      accountId: "acct",
-      plaidTransactionId: "p4",
-      amount: "-2412.30",
-      category: "INCOME",
-      date: new Date("2026-08-07T00:00:00Z"),
-    }),
+    t("buy", "846.20", "spending", "2026-08-05", { category: "GENERAL_MERCHANDISE" }),
+    t("refund", "-846.20", "refund", "2026-08-06", { category: "GENERAL_MERCHANDISE", isRefund: true }),
+    t("food", "55.30", "spending", "2026-08-10", { category: "FOOD_AND_DRINK" }),
+    t("custom", "40.00", "spending", "2026-08-12", { category: "FOOD_AND_DRINK", customCategory: "GROCERIES" }),
+    t("pay", "-2412.30", "income", "2026-08-07", { category: "INCOME" }),
+    t("share", "-25.00", "reimbursement", "2026-08-08", { category: "TRANSFER_IN" }),
+    t("save", "300.00", "savings_out", "2026-08-15", { category: "TRANSFER_OUT", isTransfer: true }),
+    t("cc_out", "120.00", "cc_payment", "2026-08-20", { category: "LOAN_PAYMENTS", isTransfer: true }),
+    t("cc_in", "-120.00", "cc_payment", "2026-08-20", { accountId: "card", category: "LOAN_PAYMENTS", isTransfer: true }),
+    t("unclassified", "10.00", null, "2026-08-21"),
+    t("after", "99.00", "spending", "2026-09-01", { category: "FOOD_AND_DRINK" }),
   ]);
 });
 
-afterEach(() => {
-  vi.useRealTimers();
-});
-
-async function loadMonth() {
-  const db = getTestDb();
-  return db.query.transactions.findMany({
-    where: (t, { and, eq, between }) =>
-      and(eq(t.userId, USER), between(t.date, MONTH_START, MONTH_END)),
-  });
+/** The filters the dashboard's links produce for its period. */
+function linkFilters(includeTransfers: boolean): TransactionFilters {
+  const q = parseTransactionQuery(periodToRange(PERIOD));
+  return { ...q.filters, includeTransfers };
 }
 
-describe("dashboard and transactions page agree", () => {
-  it("reports the same expenses from both aggregation paths", async () => {
-    const stats = await getOverviewStats(USER);
-    const totals = await getTransactionTotals(USER, {
-      startDate: MONTH_START,
-      endDate: MONTH_END,
-    });
-    const dashboard = aggregateIncomeAndExpenses(await loadMonth());
-
-    // 846.20 spent, 846.20 refunded, 55.30 food => 55.30.
-    expect(stats.expensesThisMonth).toBeCloseTo(55.3, 2);
-    expect(totals.expenses).toBeCloseTo(55.3, 2);
-    expect(dashboard.expenses).toBeCloseTo(55.3, 2);
+async function exportSummary(filters: TransactionFilters) {
+  const [rows, totals] = await Promise.all([
+    searchTransactions(USER, filters, { limit: 1_000_000 }),
+    getTransactionTotals(USER, filters),
+  ]);
+  const buffer = await buildTransactionsWorkbook({
+    mode: "standard",
+    filterDisplay: {},
+    rows,
+    totals,
+    generatedAt: new Date("2026-09-10T12:00:00Z"),
   });
-
-  it("reports the same income from both aggregation paths", async () => {
-    const stats = await getOverviewStats(USER);
-    const totals = await getTransactionTotals(USER, {
-      startDate: MONTH_START,
-      endDate: MONTH_END,
-    });
-    const dashboard = aggregateIncomeAndExpenses(await loadMonth());
-
-    // The refund must not appear as income anywhere.
-    expect(stats.incomeThisMonth).toBeCloseTo(2412.30, 2);
-    expect(totals.income).toBeCloseTo(2412.30, 2);
-    expect(dashboard.income).toBeCloseTo(2412.30, 2);
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(buffer as unknown as ArrayBuffer);
+  const summary = new Map<string, unknown>();
+  wb.getWorksheet("Summary")!.eachRow((row) => {
+    summary.set(String(row.getCell(1).value ?? ""), row.getCell(2).value);
   });
+  const sheetRows = wb.getWorksheet("Transactions")!.rowCount - 1;
+  return { summary, sheetRows, rows };
+}
 
-  it("keeps the refund out of the spending-type income figure too", async () => {
-    const byType = aggregateBySpendingType(await loadMonth());
-    expect(byType.income).toBeCloseTo(2412.30, 2);
-    // The refund nets against the bucket it was spent from.
-    expect(byType.totalExpenses).toBeCloseTo(55.3, 2);
+describe("cash-flow tiles drill down to the rows they sum", () => {
+  it("each tile link reproduces its figure on the transactions page, transfers hidden or not", async () => {
+    const dashboard = await getCashFlow(periodScope(USER, PERIOD));
+    for (const includeTransfers of [true, false]) {
+      const base = periodToRange(PERIOD);
+      const totals = async (extra: Record<string, string>) =>
+        getTransactionTotals(USER, {
+          ...parseTransactionQuery({ ...base, ...extra }).filters,
+          includeTransfers,
+        });
+      expect((await totals({ flowGroup: "income" })).moneyIn).toBe(dashboard.moneyIn);
+      expect((await totals({ view: "spending" })).netSpending).toBe(dashboard.netSpending);
+      // An explicit savings filter overrides the hide-transfers preference.
+      expect((await totals({ flowGroup: "savings" })).savedNet).toBe(dashboard.savedNet);
+      expect((await totals({ flowClass: "cc_payment" })).count).toBe(2);
+    }
   });
 });
 
-describe("effective category", () => {
-  beforeEach(async () => {
-    const db = getTestDb();
-    await db.insert(transactions).values([
-      makeTxn({
-        id: "t_custom",
-        userId: USER,
-        accountId: "acct",
-        plaidTransactionId: "p5",
-        amount: "40.00",
-        category: "FOOD_AND_DRINK",
-        customCategory: "GROCERIES",
-        date: new Date("2026-08-12T00:00:00Z"),
-      }),
-    ]);
+describe("dashboard and transactions page return identical totals", () => {
+  it("cash flow == transactions totals == export summary for the same period", async () => {
+    const dashboard = await getCashFlow(periodScope(USER, PERIOD));
+    const filters = linkFilters(true);
+    const totals = await getTransactionTotals(USER, filters);
+    const { summary, sheetRows, rows } = await exportSummary(filters);
+
+    // 846.20 − 846.20 + 55.30 + 40 − 25 reimbursement = 70.30
+    expect(dashboard.netSpending).toBe(70.3);
+    expect(dashboard.moneyIn).toBe(2412.3);
+    expect(dashboard.savedNet).toBe(300);
+    expect(dashboard.netChange).toBe(2042);
+
+    for (const key of ["moneyIn", "netSpending", "savedNet", "netChange", "grossSpending", "offsets"] as const) {
+      expect(totals[key], key).toBe(dashboard[key]);
+    }
+    expect(summary.get("Money in")).toBe(dashboard.moneyIn);
+    expect(summary.get("Net spending")).toBe(dashboard.netSpending);
+    expect(summary.get("Saved / moved (net)")).toBe(dashboard.savedNet);
+    expect(summary.get("Net change (money in − net spending − saved/moved)")).toBe(dashboard.netChange);
+
+    // Row counts agree: list count, totals count, export summary, export sheet.
+    const count = await getTransactionCount(USER, filters);
+    expect(totals.count).toBe(count);
+    expect(rows.length).toBe(count);
+    expect(summary.get("Total rows")).toBe(count);
+    expect(sheetRows).toBe(count);
   });
 
-  it("groups the category chart by the user's override, not Plaid's value", async () => {
-    // The chart used to group on the raw category while the click-through
-    // filter used the override, so a slice opened a different set of rows.
-    const byCategory = await getSpendingByCategory(USER, MONTH_START, MONTH_END);
-    const names = byCategory.map((c) => c.category);
-    expect(names).toContain("GROCERIES");
-    expect(byCategory.find((c) => c.category === "GROCERIES")!.totalAmount).toBeCloseTo(40, 2);
-    // The overridden row must not still be counted under its Plaid category.
-    expect(byCategory.find((c) => c.category === "FOOD_AND_DRINK")!.totalAmount).toBeCloseTo(
-      55.3,
-      2,
+  it("hiding transfers changes the row count consistently, not income or spending", async () => {
+    const shown = await getTransactionTotals(USER, linkFilters(true));
+    const hidden = linkFilters(false);
+    const totals = await getTransactionTotals(USER, hidden);
+    const count = await getTransactionCount(USER, hidden);
+    expect(totals.count).toBe(count);
+    expect(count).toBe(shown.count - 3); // savings_out and both card-payment legs
+    expect(totals.moneyIn).toBe(shown.moneyIn);
+    expect(totals.netSpending).toBe(shown.netSpending);
+    const { summary, sheetRows } = await exportSummary(hidden);
+    expect(summary.get("Total rows")).toBe(count);
+    expect(sheetRows).toBe(count);
+  });
+
+  it("chart buckets agree with the totals and use the user's category override", async () => {
+    const buckets = await getSpendingByBucket(periodScope(USER, PERIOD));
+    const by = Object.fromEntries(
+      [...buckets.buckets, ...buckets.negative].map((b) => [b.bucket, b.net]),
     );
-  });
-});
-
-describe("net worth precision", () => {
-  it("sums balances without float drift", async () => {
-    const db = getTestDb();
-    await db.delete(transactions);
-    await db.delete(financialAccounts);
-    await db.insert(financialAccounts).values([
-      makeAccount({
-        id: "a1",
-        userId: USER,
-        plaidItemId: "pi",
-        plaidAccountId: "pa1",
-        currentBalance: "0.10",
-      }),
-      makeAccount({
-        id: "a2",
-        userId: USER,
-        plaidItemId: "pi",
-        plaidAccountId: "pa2",
-        currentBalance: "0.20",
-      }),
-    ]);
-    const stats = await getOverviewStats(USER);
-    expect(stats.netWorth).toBe(0.3);
-  });
-
-  it("still nets liabilities against assets", async () => {
-    const db = getTestDb();
-    await db.delete(transactions);
-    await db.delete(financialAccounts);
-    await db.insert(financialAccounts).values([
-      makeAccount({
-        id: "a1",
-        userId: USER,
-        plaidItemId: "pi",
-        plaidAccountId: "pa1",
-        currentBalance: "1000.00",
-        type: "depository",
-      }),
-      makeAccount({
-        id: "a2",
-        userId: USER,
-        plaidItemId: "pi",
-        plaidAccountId: "pa2",
-        currentBalance: "75.25",
-        type: "credit",
-      }),
-    ]);
-    expect((await getOverviewStats(USER)).netWorth).toBe(924.75);
+    expect(by).toEqual({ FOOD_AND_DRINK: 55.3, GROCERIES: 40, REIMBURSEMENTS: -25 });
+    // A fully refunded purchase nets to zero and is neither drawn nor reported.
+    expect(by.GENERAL_MERCHANDISE).toBeUndefined();
+    expect(buckets.netSpending).toBe(70.3);
   });
 });
