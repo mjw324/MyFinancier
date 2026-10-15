@@ -100,7 +100,8 @@ describe("instrumentation sweep gating", () => {
   it("starts only in the Node.js server runtime", () => {
     expect(shouldStartSweep({ NEXT_RUNTIME: "nodejs", NODE_ENV: "production" } as NodeJS.ProcessEnv)).toBe(true);
     expect(shouldStartSweep({ NEXT_RUNTIME: "edge", NODE_ENV: "production" } as NodeJS.ProcessEnv)).toBe(false);
-    expect(shouldStartSweep({ NODE_ENV: "production" } as NodeJS.ProcessEnv)).toBe(false);
+    // The standalone production server (node server.js) leaves NEXT_RUNTIME unset at runtime.
+    expect(shouldStartSweep({ NODE_ENV: "production" } as NodeJS.ProcessEnv)).toBe(true);
     expect(
       shouldStartSweep({ NEXT_RUNTIME: "nodejs", NEXT_PHASE: "phase-production-build", NODE_ENV: "production" } as NodeJS.ProcessEnv),
     ).toBe(false);

@@ -18,7 +18,12 @@ declare global {
 }
 
 export function shouldStartSweep(env: NodeJS.ProcessEnv = process.env): boolean {
-  if (env.NEXT_RUNTIME !== "nodejs") return false;
+  // The Node-vs-Edge choice is made at compile time by the
+  // `process.env.NEXT_RUNTIME === "nodejs"` guard in register(), which the
+  // bundler inlines. At runtime the standalone server (`node server.js`)
+  // does NOT set NEXT_RUNTIME, so it must not be required here — requiring it
+  // silently disabled the sweep in production.
+  if (env.NEXT_RUNTIME === "edge") return false;
   if (env.NEXT_PHASE === "phase-production-build") return false;
   if (env.VITEST || env.NODE_ENV === "test") return false;
   if (env.PLAID_SYNC_SWEEP === "off") return false;
