@@ -235,6 +235,29 @@ export function forecastWindow(
   return { events, possiblyEnded };
 }
 
+const PASSIVE_INCOME_DETAILED = new Set([
+  "INCOME_INTEREST_EARNED",
+  "INCOME_DIVIDENDS",
+]);
+/** A paycheck stream must be at least this share of the largest one. */
+const PAYCHECK_MIN_SHARE = 0.25;
+
+/** Income streams that can anchor "before your next paycheck". */
+export function paycheckStreamIds(streams: ForecastStream[]): Set<string> {
+  const earned = streams.filter(
+    (s) =>
+      s.isActive &&
+      isIncomeStream(s) &&
+      !PASSIVE_INCOME_DETAILED.has(s.pfcDetailed ?? ""),
+  );
+  const largest = Math.max(0, ...earned.map(amountCentsOf));
+  return new Set(
+    earned
+      .filter((s) => amountCentsOf(s) >= largest * PAYCHECK_MIN_SHARE)
+      .map((s) => s.streamId),
+  );
+}
+
 export interface SafeToSpendInput extends ForecastWindowInput {
   defaultHorizonDays?: number;
   paycheckSearchDays?: number;
@@ -245,10 +268,16 @@ export function computeSafeToSpend(input: SafeToSpendInput): SafeToSpendResult {
   const defaultDays = input.defaultHorizonDays ?? DEFAULT_HORIZON_DAYS;
   const searchDays = input.paycheckSearchDays ?? PAYCHECK_SEARCH_DAYS;
 
-  // 1. Next paycheck: the earliest expected event of a mature INCOME stream.
+  // 1. Next paycheck: the earliest expected event of a mature, paycheck-like
+  //    INCOME stream. Passive income (interest, dividends) and income streams
+  //    far smaller than the main one never anchor the horizon — a $0.12
+  //    monthly interest credit is not "your next paycheck".
   const search = forecastWindow(input, today, addUtcDays(today, searchDays));
+  const anchors = paycheckStreamIds(input.streams);
   const paycheck =
-    search.events.find((e) => e.kind === "income" && !e.tentative) ?? null;
+    search.events.find(
+      (e) => e.kind === "income" && !e.tentative && anchors.has(e.streamId),
+    ) ?? null;
 
   // 2. Horizon ends the day before the paycheck lands (never before today).
   let through: Date;
