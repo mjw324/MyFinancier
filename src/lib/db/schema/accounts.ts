@@ -19,10 +19,18 @@ export const financialAccounts = pgTable(
     officialName: text("official_name"),
     type: text("type").notNull(),
     subtype: text("subtype"),
+    mask: text("mask"),
     currentBalance: numeric("current_balance"),
     availableBalance: numeric("available_balance"),
     isoCurrencyCode: text("iso_currency_code").default("USD"),
+    creditLimit: numeric("credit_limit"),
     lastSyncedAt: timestamp("last_synced_at", { mode: "date" }),
+    // Set when Plaid stops returning the account from /accounts/get (closed or
+    // deselected). Closed accounts are excluded from balances and totals.
+    closedAt: timestamp("closed_at", { mode: "date" }),
   },
-  (table) => [index("financial_accounts_user_id_idx").on(table.userId)],
+  (table) => [
+    index("financial_accounts_user_id_idx").on(table.userId),
+    index("financial_accounts_plaid_item_id_idx").on(table.plaidItemId),
+  ],
 ).enableRLS();

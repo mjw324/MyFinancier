@@ -105,6 +105,10 @@ type PlaidItemRow = {
   status: string;
   createdAt: Date;
   updatedAt: Date;
+  attention?: string | null;
+  consentExpiresAt?: Date | null;
+  lastSyncErrorCode?: string | null;
+  lastSuccessfulSyncAt?: Date | null;
 };
 
 type AccountRow = {
@@ -120,6 +124,9 @@ type AccountRow = {
   availableBalance: string | null;
   isoCurrencyCode: string | null;
   lastSyncedAt: Date | null;
+  mask?: string | null;
+  creditLimit?: string | null;
+  closedAt?: Date | null;
 };
 
 type TxnRow = {
@@ -134,10 +141,21 @@ type TxnRow = {
   category: string | null;
   categoryId: string | null;
   pending: boolean;
+  customName?: string | null;
+  customCategory?: string | null;
   recurringStreamId?: string | null;
   spendingType?: string | null;
   spendingTypeSource?: string | null;
   normalizedMerchant?: string | null;
   nameSignature?: string | null;
+  pendingTransactionId?: string | null;
+  authorizedDate?: Date | null;
+  isTransfer?: boolean;
+  transferPairId?: string | null;
+  isRefund?: boolean;
+  refundSource?: string | null;
+  flowClass?: string | null;
+  flowClassSource?: string | null;
+  counterpartyKey?: string | null;
   createdAt: Date;
 };

@@ -1,22 +1,38 @@
 import { NextResponse } from "next/server";
-import { z } from "zod";
 import { getServerSession } from "@/lib/auth/get-session";
-import { getAccountsWithBalances } from "@/lib/db/queries/accounts";
+import { getUserToday } from "@/lib/utils/user-time";
+import { loadForecastInput } from "@/lib/forecast/context";
 import {
-  getRecentTransactionDatesByStream,
-  listRecurringStreams,
-  toProjectionInput,
-} from "@/lib/db/queries/recurring";
-import { projectStreamEvents } from "@/lib/plaid/projection";
+  computeSafeToSpend,
+  type ForecastItem,
+} from "@/lib/forecast/safe-to-spend";
+import { logError } from "@/lib/logging";
 
-const QuerySchema = z.object({
-  through: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/)
-    .optional(),
-});
+const ymd = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null);
+const dollars = (cents: number) => cents / 100;
 
-export async function GET(request: Request) {
+function item(e: ForecastItem) {
+  return {
+    stream_id: e.streamId,
+    label: e.label,
+    date: ymd(e.date),
+    due_date: ymd(e.dueDate),
+    amount: dollars(e.amountCents),
+    kind: e.kind,
+    frequency: e.frequency,
+    late: e.late,
+    tentative: e.tentative,
+    has_price_change: e.hasPriceChange,
+  };
+}
+
+/**
+ * GET /api/safe-to-spend — "what you can spend before your next paycheck
+ * lands". See src/lib/forecast/safe-to-spend.ts for the definition. Takes no
+ * parameters; "today" is the viewer's calendar date.
+ */
+// The request carries no parameters; accepted only for the handler signature.
+export async function GET(_request?: Request) {
   const session = await getServerSession();
   if (!session?.user) {
     return NextResponse.json(
@@ -25,118 +41,55 @@ export async function GET(request: Request) {
     );
   }
 
-  const { searchParams } = new URL(request.url);
-  const parsed = QuerySchema.safeParse(Object.fromEntries(searchParams));
-  if (!parsed.success) {
+  const userId = session.user.id;
+  try {
+    const today = await getUserToday();
+    const input = await loadForecastInput(userId, today);
+    const r = computeSafeToSpend(input);
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        today: ymd(r.today),
+        through: ymd(r.through),
+        horizon_source: r.horizonSource,
+        paycheck: r.paycheck ? item(r.paycheck) : null,
+        cash: dollars(r.cashCents),
+        cash_accounts: r.cashAccounts.map((a) => ({
+          id: a.id,
+          name: a.name,
+          balance: dollars(a.cents),
+          is_stale: a.isStale,
+          as_of: a.asOf?.toISOString() ?? null,
+        })),
+        card_mode: r.cardMode,
+        card_obligations: dollars(r.cardObligationsCents),
+        card_balances: dollars(r.cardBalancesCents),
+        bills: dollars(r.billsCents),
+        safe_to_spend: dollars(r.safeToSpendCents),
+        upcoming: r.upcoming.map(item),
+        tentative: r.tentative.map(item),
+        possibly_ended: r.possiblyEnded.map((p) => ({
+          stream_id: p.streamId,
+          label: p.label,
+          kind: p.kind,
+          last_seen: ymd(p.lastSeen),
+          expected: ymd(p.expected),
+          amount: dollars(p.amountCents),
+        })),
+        excluded_accounts: r.excludedAccounts,
+        stale_accounts: r.staleAccounts.map((a) => ({
+          id: a.id,
+          name: a.name,
+          as_of: a.asOf?.toISOString() ?? null,
+        })),
+      },
+    });
+  } catch (error) {
+    logError("safe_to_spend.failed", error, { userId });
     return NextResponse.json(
-      { success: false, error: "Invalid query parameters" },
-      { status: 400 },
+      { success: false, error: "Could not calculate safe to spend right now." },
+      { status: 500 },
     );
   }
-
-  const userId = session.user.id;
-  const today = startOfDay(new Date());
-
-  const streams = await listRecurringStreams(userId, { activeOnly: true });
-  const recentDates = await getRecentTransactionDatesByStream(
-    userId,
-    streams.map((s) => s.streamId),
-  );
-
-  let through: Date;
-  let horizonSource: "explicit" | "next_inflow" | "default_30d";
-  if (parsed.data.through) {
-    through = new Date(`${parsed.data.through}T23:59:59`);
-    horizonSource = "explicit";
-  } else {
-    const candidate = nextInflowWithin(streams, today, 35);
-    if (candidate) {
-      through = endOfDay(candidate);
-      horizonSource = "next_inflow";
-    } else {
-      through = endOfDay(addDays(today, 30));
-      horizonSource = "default_30d";
-    }
-  }
-
-  const events = streams.flatMap((row) =>
-    projectStreamEvents(
-      toProjectionInput(row, recentDates.get(row.streamId) ?? []),
-      today,
-      through,
-    ),
-  );
-
-  let predictedInflows = 0;
-  let predictedOutflows = 0;
-  for (const e of events) {
-    if (e.flowType === "inflow") predictedInflows += Math.abs(e.amount);
-    else predictedOutflows += Math.abs(e.amount);
-  }
-
-  const accounts = await getAccountsWithBalances(userId);
-  const settledBalance = accounts.reduce((s, a) => s + a.netWorthSettled, 0);
-  const projectedBalance = accounts.reduce(
-    (s, a) => s + a.netWorthProjected,
-    0,
-  );
-
-  const safeToSpend =
-    projectedBalance + predictedInflows - predictedOutflows;
-
-  events.sort((a, b) => a.date.getTime() - b.date.getTime());
-
-  return NextResponse.json({
-    success: true,
-    data: {
-      current_balance: settledBalance,
-      projected_balance: projectedBalance,
-      predicted_inflows: predictedInflows,
-      predicted_outflows: predictedOutflows,
-      safe_to_spend: safeToSpend,
-      through: through.toISOString(),
-      horizon_source: horizonSource,
-      upcoming_bills: events.map((e) => ({
-        stream_id: e.streamId,
-        date: e.date.toISOString(),
-        amount: e.amount,
-        merchant_name: e.merchantName,
-        description: e.description,
-        flow_type: e.flowType,
-        frequency: e.frequency,
-        status: e.status,
-        has_price_change: e.hasPriceChange,
-        tentative: e.tentative,
-      })),
-    },
-  });
-}
-
-function nextInflowWithin(
-  streams: Awaited<ReturnType<typeof listRecurringStreams>>,
-  from: Date,
-  days: number,
-): Date | null {
-  const limit = addDays(from, days);
-  let best: Date | null = null;
-  for (const s of streams) {
-    if (s.flowType !== "inflow") continue;
-    if (!s.predictedNextDate) continue;
-    if (s.predictedNextDate < from) continue;
-    if (s.predictedNextDate > limit) continue;
-    if (!best || s.predictedNextDate < best) best = s.predictedNextDate;
-  }
-  return best;
-}
-
-function startOfDay(d: Date) {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
-}
-function endOfDay(d: Date) {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
-}
-function addDays(d: Date, n: number) {
-  const x = new Date(d);
-  x.setDate(x.getDate() + n);
-  return x;
 }

@@ -1,21 +1,43 @@
 import ExcelJS from "exceljs";
-import type { searchTransactions } from "@/lib/db/queries/transactions";
+import type {
+  searchTransactions,
+  TransactionTotals,
+} from "@/lib/db/queries/transactions";
+import { FLOW_CLASS_LABEL, isFlowClass } from "@/lib/analytics/flow";
+import { bucketLabel } from "@/lib/analytics/labels";
 
 export type ExportMode = "standard" | "detailed";
 
 export type TransactionRow = Awaited<ReturnType<typeof searchTransactions>>[number];
 
-export type Totals = {
-  count: number;
-  income: number;
-  expenses: number;
-  net: number;
-};
+/** Summary figures: the same metric the dashboard and totals bar use. */
+export type Totals = Pick<
+  TransactionTotals,
+  | "count"
+  | "income"
+  | "otherIncome"
+  | "moneyIn"
+  | "grossSpending"
+  | "refunds"
+  | "reimbursements"
+  | "rewards"
+  | "netSpending"
+  | "savedNet"
+  | "netChange"
+  | "unclassifiedCount"
+  | "stalePendingCount"
+>;
 
 export type FilterDisplay = {
   search?: string;
   accountName?: string;
   category?: string;
+  bucket?: string;
+  flowClass?: string;
+  flowGroup?: string;
+  counterparty?: string;
+  cost?: "fixed" | "variable";
+  view?: "spending";
   startDate?: Date;
   endDate?: Date;
   recurring?: "all" | "recurring" | "onetime";
@@ -37,8 +59,10 @@ const STANDARD_COLUMNS = [
   { header: "Date", key: "date", width: 12 },
   { header: "Description", key: "description", width: 36 },
   { header: "Merchant", key: "merchant", width: 24 },
-  { header: "Amount", key: "amount", width: 14 },
+  // Bank sign convention, stated in the header so nobody has to guess.
+  { header: "Amount (+ out / − in)", key: "amount", width: 20 },
   { header: "Category", key: "category", width: 22 },
+  { header: "Flow", key: "flow", width: 26 },
   { header: "Account", key: "account", width: 22 },
   { header: "Spending Type", key: "spendingType", width: 16 },
 ];
@@ -54,7 +78,11 @@ const DETAIL_EXTRA_COLUMNS = [
   { header: "Normalized Merchant", key: "normalizedMerchant", width: 24 },
   { header: "Name Signature", key: "nameSignature", width: 24 },
   { header: "Pending", key: "pending", width: 10 },
+  { header: "Flow Class", key: "flowClass", width: 22 },
+  { header: "Flow Class Source", key: "flowClassSource", width: 16 },
+  { header: "Counterparty Key", key: "counterpartyKey", width: 24 },
   { header: "Is Transfer", key: "isTransfer", width: 12 },
+  { header: "Is Refund", key: "isRefund", width: 10 },
   { header: "Transfer Pair ID", key: "transferPairId", width: 38 },
   { header: "Recurring Stream ID", key: "recurringStreamId", width: 38 },
   { header: "Spending Type Source", key: "spendingTypeSource", width: 18 },
@@ -91,14 +119,39 @@ function buildSummarySheet(wb: ExcelJS.Workbook, args: BuildArgs) {
     "Mode",
     args.mode === "detailed" ? "Detailed (debug)" : "Standard",
   ]);
-  sheet.addRow(["Total rows", args.totals.count]);
+  // The rows actually written below, so the summary and the sheet agree.
+  sheet.addRow(["Total rows", args.rows.length]);
+  const t = args.totals;
+  const notCounted = t.unclassifiedCount + t.stalePendingCount;
+  if (notCounted > 0) {
+    sheet.addRow([
+      "Not counted in totals",
+      `${notCounted} (${t.unclassifiedCount} not classified yet, ${t.stalePendingCount} stale pending)`,
+    ]);
+  }
 
-  const incomeRow = sheet.addRow(["Income", args.totals.income]);
-  incomeRow.getCell(2).numFmt = CURRENCY_FMT;
-  const expensesRow = sheet.addRow(["Expenses", args.totals.expenses]);
-  expensesRow.getCell(2).numFmt = CURRENCY_FMT;
-  const netRow = sheet.addRow(["Net", args.totals.net]);
-  netRow.getCell(2).numFmt = CURRENCY_FMT;
+  sheet.addRow([]);
+  const moneyHeader = sheet.addRow(["Totals (same figures as the dashboard)"]);
+  moneyHeader.font = { bold: true };
+  const money = (label: string, value: number, bold = false) => {
+    const row = sheet.addRow([label, value]);
+    row.getCell(2).numFmt = CURRENCY_FMT;
+    if (bold) row.font = { bold: true };
+  };
+  money("Income", t.income);
+  money("Other money in", t.otherIncome);
+  money("Money in", t.moneyIn, true);
+  money("Spending (before refunds)", t.grossSpending);
+  money("Refunds", -t.refunds);
+  money("Reimbursements", -t.reimbursements);
+  money("Rewards", -t.rewards);
+  money("Net spending", t.netSpending, true);
+  money("Saved / moved (net)", t.savedNet);
+  money("Net change (money in − net spending − saved/moved)", t.netChange, true);
+  sheet.addRow([
+    "Sign convention",
+    "Summary: Net change > 0 means more came in than went out. Transactions sheet Amount: positive = money out, negative = money in.",
+  ]);
 
   sheet.addRow([]);
   const filtersHeader = sheet.addRow(["Filters applied"]);
@@ -134,6 +187,7 @@ function buildTransactionsSheet(wb: ExcelJS.Workbook, args: BuildArgs) {
       merchant: row.merchantName ?? "",
       amount: parseFloat(row.amount),
       category: row.customCategory ?? row.category ?? "",
+      flow: flowLabel(row.flowClass),
       account: row.financialAccount?.name ?? "",
       spendingType: row.spendingType ?? "",
     };
@@ -151,7 +205,11 @@ function buildTransactionsSheet(wb: ExcelJS.Workbook, args: BuildArgs) {
         normalizedMerchant: row.normalizedMerchant ?? "",
         nameSignature: row.nameSignature ?? "",
         pending: row.pending ? "yes" : "no",
+        flowClass: row.flowClass ?? "",
+        flowClassSource: row.flowClassSource ?? "",
+        counterpartyKey: row.counterpartyKey ?? "",
         isTransfer: row.isTransfer ? "yes" : "no",
+        isRefund: row.isRefund ? "yes" : "no",
         transferPairId: row.transferPairId ?? "",
         recurringStreamId: row.recurringStreamId ?? "",
         spendingTypeSource: row.spendingTypeSource ?? "",
@@ -176,6 +234,17 @@ function describeFilters(fd: FilterDisplay): Array<[string, string]> {
   if (fd.search) out.push(["Search", fd.search]);
   if (fd.accountName) out.push(["Account", fd.accountName]);
   if (fd.category) out.push(["Category", fd.category]);
+  if (fd.bucket) out.push(["Spending bucket", bucketLabel(fd.bucket)]);
+  if (fd.flowClass) {
+    out.push([
+      "Flow",
+      isFlowClass(fd.flowClass) ? FLOW_CLASS_LABEL[fd.flowClass] : fd.flowClass,
+    ]);
+  }
+  if (fd.flowGroup) out.push(["Flow group", fd.flowGroup]);
+  if (fd.counterparty) out.push(["Counterparty", fd.counterparty]);
+  if (fd.cost) out.push(["Costs", fd.cost]);
+  if (fd.view === "spending") out.push(["View", "Net spending rows"]);
   if (fd.startDate) out.push(["Start date", isoDate(fd.startDate)]);
   if (fd.endDate) out.push(["End date", isoDate(fd.endDate)]);
   if (fd.recurring && fd.recurring !== "all") {
@@ -186,6 +255,11 @@ function describeFilters(fd: FilterDisplay): Array<[string, string]> {
     out.push(["Include transfers", fd.includeTransfers ? "true" : "false"]);
   }
   return out;
+}
+
+function flowLabel(flowClass: string | null): string {
+  if (!flowClass) return "Not classified yet";
+  return isFlowClass(flowClass) ? FLOW_CLASS_LABEL[flowClass] : flowClass;
 }
 
 function isoDate(d: Date): string {

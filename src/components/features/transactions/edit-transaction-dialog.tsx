@@ -29,6 +29,7 @@ import {
   setTransactionRefundAction,
 } from "@/app/(routes)/(dashboard)/transactions/actions";
 import { ClassifyPopover } from "@/components/features/transactions/classify-popover";
+import { FlowClassControl } from "@/components/features/transactions/flow-class-control";
 
 const NONE_CATEGORY = "__none__";
 
@@ -50,6 +51,11 @@ interface EditTransactionDialogProps {
     nameSignature: string | null;
     isRefund: boolean | null;
     refundSource: string | null;
+    // Flow classification (optional so callers that select a narrower row
+    // shape still compile; the transactions query returns every column).
+    flowClass?: string | null;
+    flowClassSource?: string | null;
+    transferPairId?: string | null;
   };
   categories: string[];
 }
@@ -241,6 +247,14 @@ export function EditTransactionDialog({
               </div>
             </div>
           )}
+
+          <FlowClassControl
+            transactionId={transaction.id}
+            amount={transaction.amount}
+            flowClass={transaction.flowClass}
+            flowClassSource={transaction.flowClassSource}
+            transferPairId={transaction.transferPairId}
+          />
 
           {isInflow && (
             <div className="space-y-2">

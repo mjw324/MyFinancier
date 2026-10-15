@@ -1,81 +1,110 @@
 /**
- * Pure date-range helpers for dashboard filters.
- * Always pass `now` explicitly in tests so results are deterministic.
+ * Dashboard periods and the date parameters that link the dashboard to the
+ * transactions page.
+ *
+ * Every period is resolved from the viewer's calendar date (`getUserToday()`),
+ * never the server clock, and every boundary is a UTC-midnight calendar date —
+ * the representation transaction dates use. A period's `end` is exclusive; the
+ * transactions page takes an inclusive `to`, so links convert with
+ * `periodToRange`.
  */
 
-export type DashboardRange = "week" | "month" | "year" | "ytd";
+import { z } from "zod";
+import {
+  calendarPeriod,
+  rollingPeriod,
+  utcAddDays,
+  yearToDate,
+  type Period,
+} from "@/lib/analytics/periods";
 
-export interface DateRange {
-  start: Date;
-  end: Date;
-}
+export const DASHBOARD_PERIODS = ["month", "last-month", "30d", "ytd"] as const;
 
-/** Current period for the given range, ending at `now`. */
-export function getDateRange(range: DashboardRange, now: Date = new Date()): DateRange {
-  switch (range) {
-    case "week": {
-      const start = new Date(now);
-      start.setDate(start.getDate() - 6);
-      start.setHours(0, 0, 0, 0);
-      return { start, end: now };
-    }
-    case "month": {
-      const start = new Date(now);
-      start.setDate(start.getDate() - 29);
-      start.setHours(0, 0, 0, 0);
-      return { start, end: now };
-    }
-    case "year": {
-      const start = new Date(now);
-      start.setFullYear(start.getFullYear() - 1);
-      start.setDate(start.getDate() + 1);
-      start.setHours(0, 0, 0, 0);
-      return { start, end: now };
-    }
+export type DashboardPeriodKey = (typeof DASHBOARD_PERIODS)[number];
+
+export const DASHBOARD_PERIOD_LABELS: Record<DashboardPeriodKey, string> = {
+  month: "This month",
+  "last-month": "Last month",
+  "30d": "Last 30 days",
+  ytd: "Year to date",
+};
+
+/** Unknown or malformed values fall back to "this month" instead of throwing. */
+export const dashboardPeriodSchema = z.enum(DASHBOARD_PERIODS).catch("month");
+
+export function resolveDashboardPeriod(
+  key: DashboardPeriodKey,
+  today: Date,
+): Period {
+  switch (key) {
+    case "last-month":
+      return calendarPeriod("month", today, -1);
+    case "30d":
+      return rollingPeriod(30, today);
     case "ytd":
-      return { start: new Date(now.getFullYear(), 0, 1), end: now };
+      return yearToDate(today);
+    default:
+      return calendarPeriod("month", today);
   }
 }
 
-/** Previous period of the same length, used for delta comparisons. */
-export function getPreviousDateRange(
-  range: DashboardRange,
-  now: Date = new Date(),
-): DateRange {
-  switch (range) {
-    case "week": {
-      const end = new Date(now);
-      end.setDate(end.getDate() - 7);
-      end.setHours(23, 59, 59, 999);
-      const start = new Date(end);
-      start.setDate(start.getDate() - 6);
-      start.setHours(0, 0, 0, 0);
-      return { start, end };
-    }
-    case "month": {
-      const end = new Date(now);
-      end.setDate(end.getDate() - 30);
-      end.setHours(23, 59, 59, 999);
-      const start = new Date(end);
-      start.setDate(start.getDate() - 29);
-      start.setHours(0, 0, 0, 0);
-      return { start, end };
-    }
-    case "year": {
-      const end = new Date(now);
-      end.setFullYear(end.getFullYear() - 1);
-      end.setHours(23, 59, 59, 999);
-      const start = new Date(end);
-      start.setFullYear(start.getFullYear() - 1);
-      start.setDate(start.getDate() + 1);
-      start.setHours(0, 0, 0, 0);
-      return { start, end };
-    }
-    case "ytd": {
-      const prevYear = now.getFullYear() - 1;
-      const start = new Date(prevYear, 0, 1);
-      const end = new Date(prevYear, now.getMonth(), now.getDate(), 23, 59, 59, 999);
-      return { start, end };
-    }
+const DATE_PARAM = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/** YYYY-MM-DD for a UTC-midnight calendar date. */
+export function toDateParam(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Parses a YYYY-MM-DD query value into a UTC-midnight Date. Returns null for
+ * anything else, including impossible dates such as 2026-02-30, so a bad URL
+ * can never reach the database as `Invalid Date`.
+ */
+export function parseDateParam(value: string | null | undefined): Date | null {
+  if (!value) return null;
+  const m = DATE_PARAM.exec(value);
+  if (!m) return null;
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const date = new Date(Date.UTC(y, mo - 1, d));
+  if (
+    date.getUTCFullYear() !== y ||
+    date.getUTCMonth() !== mo - 1 ||
+    date.getUTCDate() !== d
+  ) {
+    return null;
   }
+  return date;
+}
+
+/** Inclusive `from`/`to` query values covering a period (whose end is exclusive). */
+export function periodToRange(period: Pick<Period, "start" | "end">): {
+  from: string;
+  to: string;
+} {
+  return {
+    from: toDateParam(period.start),
+    to: toDateParam(utcAddDays(period.end, -1)),
+  };
+}
+
+export type TransactionsLinkParams = {
+  from?: string;
+  to?: string;
+  bucket?: string;
+  category?: string;
+  flowClass?: string;
+  flowGroup?: string;
+  counterparty?: string;
+  cost?: "fixed" | "variable";
+  view?: "spending";
+};
+
+/** A /transactions URL that opens exactly the rows a dashboard figure summed. */
+export function transactionsHref(params: TransactionsLinkParams): string {
+  const qs = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value) qs.set(key, value);
+  }
+  const s = qs.toString();
+  return s ? `/transactions?${s}` : "/transactions";
 }

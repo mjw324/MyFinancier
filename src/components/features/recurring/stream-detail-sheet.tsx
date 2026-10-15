@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { displayName, formatCurrency, formatDate } from "@/lib/utils/format";
 import { cn } from "@/lib/utils";
+import { hasPriceChange } from "@/lib/plaid/projection";
 import { TransactionLabel } from "@/components/features/transactions/transaction-label";
 
 interface StreamRow {
@@ -46,7 +47,6 @@ interface ApiResponse {
   error?: string;
 }
 
-const PRICE_CHANGE_THRESHOLD = 0.05;
 
 interface StreamDetailSheetProps {
   streamId: string | null;
@@ -175,8 +175,8 @@ export function StreamDetailSheet({
 function StreamSummary({ stream }: { stream: StreamRow }) {
   const avg = parseFloat(stream.averageAmount);
   const last = parseFloat(stream.lastAmount);
-  const priceChanged =
-    avg > 0 && Math.abs(last - avg) / avg > PRICE_CHANGE_THRESHOLD;
+  // Inflow amounts are negative (Plaid sign): compare magnitudes.
+  const priceChanged = hasPriceChange(avg, last);
   const flowLabel = stream.flowType === "inflow" ? "Inflow" : "Outflow";
 
   return (

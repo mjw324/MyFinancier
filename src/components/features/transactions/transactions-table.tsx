@@ -35,6 +35,7 @@ interface Transaction {
   isTransfer: boolean | null;
   isRefund: boolean | null;
   refundSource: string | null;
+  flowClass: string | null;
   financialAccount: {
     name: string;
   } | null;
@@ -43,11 +44,17 @@ interface Transaction {
 interface TransactionsTableProps {
   transactions: Transaction[];
   categories: string[];
+  /** flow class → label (from the server, so the schema stays off the client). */
+  flowLabels?: Record<string, string>;
 }
+
+/** Plain purchases and paychecks need no badge; everything else says what it is. */
+const UNBADGED_FLOWS = new Set(["spending", "income", "zero"]);
 
 export function TransactionsTable({
   transactions,
   categories,
+  flowLabels = {},
 }: TransactionsTableProps) {
   const [editing, setEditing] = useState<Transaction | null>(null);
 
@@ -105,15 +112,25 @@ export function TransactionsTable({
                         {txn.recurringStreamId && (
                           <RecurringBadge streamId={txn.recurringStreamId} />
                         )}
-                        {txn.isTransfer && (
-                          <Badge variant="secondary" className="text-xs">
-                            Transfer
-                          </Badge>
-                        )}
-                        {txn.isRefund && (
-                          <Badge variant="secondary" className="text-xs">
-                            Refund
-                          </Badge>
+                        {txn.flowClass ? (
+                          !UNBADGED_FLOWS.has(txn.flowClass) && (
+                            <Badge variant="secondary" className="text-xs">
+                              {flowLabels[txn.flowClass] ?? txn.flowClass}
+                            </Badge>
+                          )
+                        ) : (
+                          <>
+                            {txn.isTransfer && (
+                              <Badge variant="secondary" className="text-xs">
+                                Transfer
+                              </Badge>
+                            )}
+                            {txn.isRefund && (
+                              <Badge variant="secondary" className="text-xs">
+                                Refund
+                              </Badge>
+                            )}
+                          </>
                         )}
                       </p>
                       {txn.pending && (

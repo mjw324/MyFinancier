@@ -1,84 +1,104 @@
 import { describe, it, expect } from "vitest";
-import { getPeriodStart, getPeriodEnd } from "@/lib/utils/budget-periods";
+import {
+  defaultBudgetStart,
+  resolveBudgetWindow,
+  toYmd,
+} from "@/lib/utils/budget-periods";
 
-const iso = (d: Date) =>
-  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}:${String(d.getSeconds()).padStart(2, "0")}`;
+const d = (ymd: string) => new Date(`${ymd}T00:00:00Z`);
 
-const BUDGET_START = new Date(2024, 0, 1, 0, 0, 0);
+function win(
+  period: "weekly" | "monthly" | "yearly",
+  start: string,
+  today: string,
+  end: string | null = null,
+) {
+  const w = resolveBudgetWindow(
+    { period, startDate: d(start), endDate: end ? d(end) : null },
+    d(today),
+  );
+  return { start: toYmd(w.start), end: toYmd(w.end), last: toYmd(w.lastDay), state: w.state, daysLeft: w.daysLeft };
+}
 
-describe("getPeriodStart", () => {
-  it('"monthly" returns the 1st of the current month', () => {
-    const now = new Date(2026, 3, 15, 14, 30); // Apr 15 2026
-    expect(iso(getPeriodStart("monthly", BUDGET_START, now))).toBe(
-      "2026-04-01 00:00:00",
-    );
+describe("resolveBudgetWindow (verify-calcs 6.3)", () => {
+  it("monthly from the 1st follows calendar months, half-open", () => {
+    expect(win("monthly", "2026-01-01", "2026-04-15")).toEqual({
+      start: "2026-04-01",
+      end: "2026-05-01",
+      last: "2026-04-30",
+      state: "active",
+      daysLeft: 16,
+    });
+    // The boundary day belongs to the new period only.
+    expect(win("monthly", "2026-01-01", "2026-05-01").start).toBe("2026-05-01");
   });
 
-  it('"yearly" returns Jan 1 of the current year', () => {
-    const now = new Date(2026, 6, 4, 12, 0); // Jul 4 2026
-    expect(iso(getPeriodStart("yearly", BUDGET_START, now))).toBe(
-      "2026-01-01 00:00:00",
-    );
+  it("monthly honours a mid-month anchor", () => {
+    expect(win("monthly", "2026-01-15", "2026-04-10")).toMatchObject({
+      start: "2026-03-15",
+      end: "2026-04-15",
+    });
+    expect(win("monthly", "2026-01-15", "2026-04-15").start).toBe("2026-04-15");
   });
 
-  it('"weekly" returns Monday of the current week', () => {
-    // Wednesday April 15 2026
-    const wednesday = new Date(2026, 3, 15, 14, 30);
-    expect(iso(getPeriodStart("weekly", BUDGET_START, wednesday))).toBe(
-      "2026-04-13 00:00:00",
-    );
+  it("monthly anchored on the 31st clamps short months from the anchor, not cumulatively", () => {
+    expect(win("monthly", "2026-01-31", "2026-03-01")).toMatchObject({
+      start: "2026-02-28",
+      end: "2026-03-31",
+    });
+    expect(win("monthly", "2026-01-31", "2026-04-05")).toMatchObject({
+      start: "2026-03-31",
+      end: "2026-04-30",
+    });
   });
 
-  it('"weekly" handles Sunday correctly (rolls back to prior Monday)', () => {
-    // Sunday April 19 2026
-    const sunday = new Date(2026, 3, 19, 14, 30);
-    expect(iso(getPeriodStart("weekly", BUDGET_START, sunday))).toBe(
-      "2026-04-13 00:00:00",
-    );
+  it("weekly repeats every 7 days from the start weekday", () => {
+    // 2026-08-07 is a Friday.
+    expect(win("weekly", "2026-08-07", "2026-08-20")).toMatchObject({
+      start: "2026-08-14",
+      end: "2026-08-21",
+      daysLeft: 1,
+    });
   });
 
-  it('"weekly" returns same day on Monday', () => {
-    // Monday April 13 2026
-    const monday = new Date(2026, 3, 13, 8, 0);
-    expect(iso(getPeriodStart("weekly", BUDGET_START, monday))).toBe(
-      "2026-04-13 00:00:00",
-    );
+  it("yearly repeats from the anchor date", () => {
+    expect(win("yearly", "2025-07-01", "2026-03-01")).toMatchObject({
+      start: "2025-07-01",
+      end: "2026-07-01",
+    });
   });
 
-  it("falls back to budgetStart for unknown periods", () => {
-    const now = new Date(2026, 3, 15);
-    expect(getPeriodStart("custom", BUDGET_START, now)).toBe(BUDGET_START);
+  it("before the start date the first period is upcoming", () => {
+    expect(win("monthly", "2026-09-01", "2026-08-20")).toMatchObject({
+      start: "2026-09-01",
+      state: "upcoming",
+      daysLeft: 0,
+    });
+  });
+
+  it("an end date caps the last period and ends the budget", () => {
+    expect(win("monthly", "2026-01-01", "2026-03-10", "2026-03-20")).toMatchObject({
+      start: "2026-03-01",
+      end: "2026-03-21",
+      last: "2026-03-20",
+      state: "active",
+    });
+    expect(win("monthly", "2026-01-01", "2026-06-10", "2026-03-20")).toMatchObject({
+      start: "2026-03-01",
+      last: "2026-03-20",
+      state: "ended",
+    });
+    // The end date itself is still inside the budget.
+    expect(win("monthly", "2026-01-01", "2026-03-20", "2026-03-20").state).toBe("active");
   });
 });
 
-describe("getPeriodEnd", () => {
-  it('"monthly" returns last day of the month at 23:59:59', () => {
-    const start = new Date(2026, 3, 1); // April
-    expect(iso(getPeriodEnd("monthly", start))).toBe("2026-04-30 23:59:59");
-  });
-
-  it('"monthly" handles February correctly (non-leap year)', () => {
-    const start = new Date(2025, 1, 1); // Feb 2025
-    expect(iso(getPeriodEnd("monthly", start))).toBe("2025-02-28 23:59:59");
-  });
-
-  it('"monthly" handles February in leap years', () => {
-    const start = new Date(2024, 1, 1); // Feb 2024 — leap year
-    expect(iso(getPeriodEnd("monthly", start))).toBe("2024-02-29 23:59:59");
-  });
-
-  it('"yearly" returns Dec 31 23:59:59', () => {
-    const start = new Date(2026, 0, 1);
-    expect(iso(getPeriodEnd("yearly", start))).toBe("2026-12-31 23:59:59");
-  });
-
-  it('"weekly" returns 6 days after start at 23:59:59', () => {
-    const monday = new Date(2026, 3, 13);
-    expect(iso(getPeriodEnd("weekly", monday))).toBe("2026-04-19 23:59:59");
-  });
-
-  it('"weekly" handles month rollover', () => {
-    const monday = new Date(2026, 3, 27); // Apr 27
-    expect(iso(getPeriodEnd("weekly", monday))).toBe("2026-05-03 23:59:59");
+describe("defaultBudgetStart", () => {
+  it("defaults to calendar boundaries", () => {
+    expect(toYmd(defaultBudgetStart("monthly", d("2026-10-13")))).toBe("2026-10-01");
+    expect(toYmd(defaultBudgetStart("yearly", d("2026-10-13")))).toBe("2026-01-01");
+    // 2026-10-13 is a Tuesday → Monday 2026-10-12; a Sunday maps back 6 days.
+    expect(toYmd(defaultBudgetStart("weekly", d("2026-10-13")))).toBe("2026-10-12");
+    expect(toYmd(defaultBudgetStart("weekly", d("2026-10-18")))).toBe("2026-10-12");
   });
 });

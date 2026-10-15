@@ -15,8 +15,41 @@ import {
   clearStreamClassification as clearStreamClassificationCore,
   deleteSpendingRule as deleteSpendingRuleCore,
 } from "@/lib/spending/classify";
-import { detectAndFlagRefunds } from "@/lib/plaid/refunds";
+import { applySpendingClassifications } from "@/lib/spending/classify";
 import { logError } from "@/lib/logging";
+import { FLOW_CLASSES } from "@/lib/analytics/flow";
+import {
+  clearManualFlowClass,
+  recomputeUserFlowsLocked,
+  setManualFlowClass,
+  unpairTransfer,
+  type OverrideResult,
+} from "@/lib/analytics/apply-flow-classes";
+
+/** Pages whose numbers depend on flow classes. */
+function revalidateFlowPages() {
+  revalidatePath("/transactions");
+  revalidatePath("/dashboard");
+  revalidatePath("/budgets");
+}
+
+/** Spending types follow transfer status, so refresh them for changed rows. */
+async function refreshSpendingTypes(userId: string, ids: string[]) {
+  if (ids.length > 0) await applySpendingClassifications(userId, ids);
+}
+
+function overrideResponse(result: OverrideResult) {
+  if (!result.ok) {
+    return {
+      success: false as const,
+      error:
+        result.error === "not_found"
+          ? "Transaction not found"
+          : "That classification does not fit this transaction",
+    };
+  }
+  return { success: true as const, flowClass: result.flowClass };
+}
 
 const updateSchema = z.object({
   transactionId: z.string().min(1),
@@ -98,8 +131,19 @@ export async function updateTransactionOverridesAction(
       );
   }
 
+  // The category is an input to flow classification (and the name to the
+  // counterparty key): recompute so totals follow the edit. A failure here
+  // leaves the edit saved; the next sync's pass heals the classes.
+  try {
+    const result = await recomputeUserFlowsLocked(userId);
+    await refreshSpendingTypes(userId, result.changedIds);
+  } catch (err) {
+    logError("transactions.reclassify-failed", err, { userId });
+  }
+
   revalidatePath("/transactions");
-  revalidatePath("/");
+  revalidatePath("/dashboard");
+  revalidateFlowPages();
   return { success: true as const };
 }
 
@@ -137,32 +181,22 @@ export async function setTransactionRefundAction(
     return { success: false as const, error: "Transaction not found" };
   }
 
-  if (parsed.data.isRefund === null) {
-    // Reset to auto: clear the override, then let detection recompute.
-    await db
-      .update(transactions)
-      .set({ isRefund: false, refundSource: null })
-      .where(
-        and(
-          eq(transactions.id, parsed.data.transactionId),
-          eq(transactions.userId, userId),
-        ),
-      );
-    await detectAndFlagRefunds(userId);
-  } else {
-    await db
-      .update(transactions)
-      .set({ isRefund: parsed.data.isRefund, refundSource: "manual" })
-      .where(
-        and(
-          eq(transactions.id, parsed.data.transactionId),
-          eq(transactions.userId, userId),
-        ),
-      );
-  }
+  // The refund toggle is a manual flow class now: on = refund, off = counts
+  // as income, reset = automatic classification.
+  const result =
+    parsed.data.isRefund === null
+      ? await clearManualFlowClass(userId, parsed.data.transactionId)
+      : await setManualFlowClass(
+          userId,
+          parsed.data.transactionId,
+          parsed.data.isRefund ? "refund" : "income",
+        );
+  if (!result.ok) return overrideResponse(result);
+  await refreshSpendingTypes(userId, result.changedIds);
 
   revalidatePath("/transactions");
-  revalidatePath("/");
+  revalidatePath("/dashboard");
+  revalidateFlowPages();
   return { success: true as const };
 }
 
@@ -224,7 +258,7 @@ export async function classifyTransactionAction(
   }
 
   revalidatePath("/transactions");
-  revalidatePath("/");
+  revalidatePath("/dashboard");
   revalidatePath("/settings");
   return { success: true as const };
 }
@@ -259,7 +293,7 @@ export async function clearTransactionClassificationAction(
 
   await clearTxClassification(userId, parsed.data.transactionId);
   revalidatePath("/transactions");
-  revalidatePath("/");
+  revalidatePath("/dashboard");
   return { success: true as const };
 }
 
@@ -293,7 +327,7 @@ export async function clearStreamClassificationAction(
 
   await clearStreamClassificationCore(userId, parsed.data.streamId);
   revalidatePath("/transactions");
-  revalidatePath("/");
+  revalidatePath("/dashboard");
   revalidatePath("/settings");
   return { success: true as const };
 }
@@ -328,7 +362,90 @@ export async function deleteSpendingRuleAction(
 
   await deleteSpendingRuleCore(userId, parsed.data.ruleId);
   revalidatePath("/transactions");
-  revalidatePath("/");
+  revalidatePath("/dashboard");
   revalidatePath("/settings");
   return { success: true as const };
+}
+
+const flowClassSchema = z.object({
+  transactionId: z.string().min(1),
+  flowClass: z.enum(FLOW_CLASSES),
+});
+
+export type SetFlowClassInput = z.infer<typeof flowClassSchema>;
+
+/** Pins a transaction to a flow class chosen by the user. */
+export async function setFlowClassAction(input: SetFlowClassInput) {
+  const session = await getServerSession();
+  if (!session?.user) {
+    return { success: false as const, error: "Unauthorized" };
+  }
+  const parsed = flowClassSchema.safeParse(input);
+  if (!parsed.success) {
+    return { success: false as const, error: "Invalid input" };
+  }
+  const userId = session.user.id;
+  try {
+    const result = await setManualFlowClass(
+      userId,
+      parsed.data.transactionId,
+      parsed.data.flowClass,
+    );
+    if (result.ok) await refreshSpendingTypes(userId, result.changedIds);
+    revalidateFlowPages();
+    return overrideResponse(result);
+  } catch (err) {
+    logError("transactions.set-flow-class-failed", err, { userId });
+    return { success: false as const, error: "Failed to update" };
+  }
+}
+
+const flowRowSchema = z.object({ transactionId: z.string().min(1) });
+
+/** Returns a transaction to automatic flow classification. */
+export async function clearFlowClassAction(
+  input: z.infer<typeof flowRowSchema>,
+) {
+  const session = await getServerSession();
+  if (!session?.user) {
+    return { success: false as const, error: "Unauthorized" };
+  }
+  const parsed = flowRowSchema.safeParse(input);
+  if (!parsed.success) {
+    return { success: false as const, error: "Invalid input" };
+  }
+  const userId = session.user.id;
+  try {
+    const result = await clearManualFlowClass(userId, parsed.data.transactionId);
+    if (result.ok) await refreshSpendingTypes(userId, result.changedIds);
+    revalidateFlowPages();
+    return overrideResponse(result);
+  } catch (err) {
+    logError("transactions.clear-flow-class-failed", err, { userId });
+    return { success: false as const, error: "Failed to update" };
+  }
+}
+
+/** "Not a transfer": dissolves a transfer pair and reclassifies both legs. */
+export async function unpairTransferAction(
+  input: z.infer<typeof flowRowSchema>,
+) {
+  const session = await getServerSession();
+  if (!session?.user) {
+    return { success: false as const, error: "Unauthorized" };
+  }
+  const parsed = flowRowSchema.safeParse(input);
+  if (!parsed.success) {
+    return { success: false as const, error: "Invalid input" };
+  }
+  const userId = session.user.id;
+  try {
+    const result = await unpairTransfer(userId, parsed.data.transactionId);
+    if (result.ok) await refreshSpendingTypes(userId, result.changedIds);
+    revalidateFlowPages();
+    return overrideResponse(result);
+  } catch (err) {
+    logError("transactions.unpair-failed", err, { userId });
+    return { success: false as const, error: "Failed to update" };
+  }
 }

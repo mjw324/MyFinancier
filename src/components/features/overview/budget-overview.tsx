@@ -1,65 +1,62 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import Link from "next/link";
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { formatCurrency, getCategoryColor } from "@/lib/utils/format";
-import { calculateBudgetPercentage } from "@/lib/utils/calculations";
+import { formatCurrency } from "@/lib/utils/format";
 import { cn } from "@/lib/utils";
-
-interface BudgetItem {
-  budgetId: string;
-  categoryName: string;
-  budgeted: number;
-  spent: number;
-  period: string;
-}
+import type { BudgetProgress } from "@/lib/db/queries/budgets";
 
 interface BudgetOverviewProps {
-  budgets: BudgetItem[];
+  budgets: BudgetProgress[];
 }
 
 export function BudgetOverview({ budgets }: BudgetOverviewProps) {
+  const active = budgets.filter((b) => b.window.state === "active");
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Budget Progress</CardTitle>
+        <CardTitle className="text-base">Budget progress</CardTitle>
+        <CardAction>
+          <Link href="/budgets" className="text-xs text-muted-foreground hover:underline">
+            Manage
+          </Link>
+        </CardAction>
       </CardHeader>
       <CardContent>
-        {budgets.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No budgets set up yet</p>
+        {active.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No active budgets.{" "}
+            <Link href="/budgets" className="underline underline-offset-2">
+              Create one
+            </Link>
+          </p>
         ) : (
-          <div className="space-y-4">
-            {budgets.map((budget) => {
-              const percentage = calculateBudgetPercentage(
-                budget.spent,
-                budget.budgeted,
-              );
-              const isOverBudget = percentage > 100;
+          <div className="flex flex-col gap-4">
+            {active.map((budget) => {
+              const over = budget.status === "over";
               return (
-                <div key={budget.budgetId} className="space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <span
-                      className="font-medium"
-                      style={{ color: getCategoryColor(budget.categoryName).text }}
-                    >
-                      {budget.categoryName}
-                    </span>
+                <div key={budget.budgetId} className="flex flex-col gap-2">
+                  <div className="flex items-center justify-between gap-2 text-sm">
+                    <span className="truncate font-medium">{budget.categoryLabel}</span>
                     <span
                       className={cn(
-                        "text-muted-foreground",
-                        isOverBudget && "text-destructive font-medium",
+                        "shrink-0 tabular-nums text-muted-foreground",
+                        over && "font-medium text-destructive",
                       )}
                     >
-                      {formatCurrency(budget.spent)} /{" "}
+                      {formatCurrency(Math.max(budget.spent, 0))} /{" "}
                       {formatCurrency(budget.budgeted)}
                     </span>
                   </div>
                   <Progress
-                    value={Math.min(percentage, 100)}
-                    className={cn(
-                      "h-2",
-                      isOverBudget &&
-                        "[&>div]:bg-destructive",
-                    )}
+                    value={Math.min(Math.max(budget.percentage, 0), 100)}
+                    className={cn("h-2", over && "[&>div]:bg-destructive")}
                   />
+                  <p className="text-xs text-muted-foreground">
+                    {budget.window.label} ·{" "}
+                    {over
+                      ? `${formatCurrency(Math.abs(budget.remaining))} over`
+                      : `${formatCurrency(budget.remaining)} left`}
+                  </p>
                 </div>
               );
             })}

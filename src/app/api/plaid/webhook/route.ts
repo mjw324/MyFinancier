@@ -1,278 +1,281 @@
 import { NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
-import { decodeProtectedHeader, importJWK, jwtVerify } from "jose";
-import { createHash, timingSafeEqual } from "node:crypto";
 import { db } from "@/lib/db";
 import { plaidItems } from "@/lib/db/schema/plaid";
-import { recurringStreams } from "@/lib/db/schema/recurring";
-import { plaidClient } from "@/lib/plaid/client";
-import { syncTransactions } from "@/lib/plaid/sync";
-import { fetchRecurringTransactions } from "@/lib/plaid/recurring";
+import { financialAccounts } from "@/lib/db/schema/accounts";
 import { logError } from "@/lib/logging";
+import { drainItemSoon, statusForPlaidErrorCode } from "@/lib/plaid/jobs";
+import { terminalStatusListSql } from "@/lib/plaid/sync-requests";
+import {
+  verifyPlaidWebhook,
+  WebhookVerificationError,
+} from "@/lib/plaid/webhook-verify";
 
-// --- Webhook Verification ---
+/**
+ * Plaid webhook receiver.
+ *
+ * Plaid gives up on a delivery after 10 s and redelivers it with backoff (up
+ * to 7 deliveries), so this handler only verifies the request, records what
+ * needs doing with one UPDATE, schedules the background drain with `after()`,
+ * and answers 200. All Plaid/API and heavy DB work happens in the drain
+ * (src/lib/plaid/jobs.ts), serialised per item by a DB lease.
+ *
+ * Status codes: 401 = not a genuine Plaid webhook (permanent for Plaid);
+ * 503 = verification key unavailable, 500 = our DB failed (Plaid retries);
+ * 400 = malformed body; 200 otherwise (including ignored/unknown webhooks).
+ */
 
-async function verifyPlaidWebhook(
-  rawBody: string,
-  verificationHeader: string,
-): Promise<void> {
-  // Step 1-2: Decode JWT header, verify algorithm and extract kid
-  const header = decodeProtectedHeader(verificationHeader);
-  if (header.alg !== "ES256") {
-    throw new Error(`Unexpected JWT algorithm: ${header.alg}`);
-  }
-  if (!header.kid) {
-    throw new Error("JWT header missing kid");
-  }
+const MAX_BODY_BYTES = 64 * 1024;
 
-  // Step 3: Fetch public key from Plaid
-  const keyResponse = await plaidClient.webhookVerificationKeyGet({
-    key_id: header.kid,
-  });
-  const jwk = keyResponse.data.key;
+const Envelope = z.object({
+  webhook_type: z.string(),
+  webhook_code: z.string(),
+  item_id: z.string().min(1).max(200).optional(),
+  environment: z.string().optional(),
+});
 
-  // Step 4: Import JWK and verify JWT signature
-  const publicKey = await importJWK(
-    {
-      kty: jwk.kty,
-      crv: jwk.crv,
-      x: jwk.x,
-      y: jwk.y,
-    },
-    "ES256",
-  );
-  const { payload } = await jwtVerify(verificationHeader, publicKey, {
-    algorithms: ["ES256"],
-  });
-
-  // Step 5: Check iat is within 5 minutes
-  const iat = payload.iat;
-  if (!iat) {
-    throw new Error("JWT payload missing iat");
-  }
-  const now = Math.floor(Date.now() / 1000);
-  if (Math.abs(now - iat) > 5 * 60) {
-    throw new Error("JWT iat is outside 5-minute window");
-  }
-
-  // Step 6: Verify body hash with constant-time comparison
-  const expectedHash = payload.request_body_sha256 as string | undefined;
-  if (!expectedHash) {
-    throw new Error("JWT payload missing request_body_sha256");
-  }
-  const bodyHash = createHash("sha256").update(rawBody).digest("hex");
-
-  const bodyHashBuffer = Buffer.from(bodyHash, "hex");
-  const expectedHashBuffer = Buffer.from(expectedHash, "hex");
-  if (
-    bodyHashBuffer.length !== expectedHashBuffer.length ||
-    !timingSafeEqual(bodyHashBuffer, expectedHashBuffer)
-  ) {
-    throw new Error("Body hash verification failed");
-  }
-}
-
-// --- Webhook Payload Schemas ---
-
-const TransactionWebhookSchema = z.object({
-  webhook_type: z.literal("TRANSACTIONS"),
-  webhook_code: z.literal("SYNC_UPDATES_AVAILABLE"),
+const SyncUpdatesAvailable = z.object({
   item_id: z.string(),
   initial_update_complete: z.boolean().optional(),
   historical_update_complete: z.boolean().optional(),
 });
 
-const ItemErrorWebhookSchema = z.object({
-  webhook_type: z.literal("ITEM"),
-  webhook_code: z.literal("ERROR"),
+const ItemError = z.object({
   item_id: z.string(),
   error: z
-    .object({
-      error_type: z.string(),
-      error_code: z.string(),
-      error_message: z.string(),
-      display_message: z.string().nullable(),
-    })
-    .nullable(),
+    .object({ error_code: z.string().optional(), error_type: z.string().optional() })
+    .nullish(),
 });
 
-const ItemPendingExpirationSchema = z.object({
-  webhook_type: z.literal("ITEM"),
-  webhook_code: z.literal("PENDING_EXPIRATION"),
+const PendingConsent = z.object({
   item_id: z.string(),
-  consent_expiration_time: z.string(),
+  consent_expiration_time: z.string().nullish(),
 });
 
-const RecurringTransactionsUpdateSchema = z.object({
-  webhook_type: z.literal("TRANSACTIONS"),
-  webhook_code: z.literal("RECURRING_TRANSACTIONS_UPDATE"),
+const UserAccountRevoked = z.object({
   item_id: z.string(),
+  account_id: z.string().nullish(),
 });
 
-// --- Route Handler ---
+// Legacy transactions webhooks that accompany SYNC_UPDATES_AVAILABLE for items
+// created before /transactions/sync. Nothing to do.
+const LEGACY_TRANSACTION_CODES = new Set([
+  "INITIAL_UPDATE",
+  "HISTORICAL_UPDATE",
+  "DEFAULT_UPDATE",
+  "TRANSACTIONS_REMOVED",
+]);
+
+type Handled = { itemRowId: string | null; action: string };
+
+function json(status: number, body: unknown) {
+  return NextResponse.json(body, { status });
+}
 
 export async function POST(request: Request) {
-  try {
-    const rawBody = await request.text();
+  const startedAt = performance.now();
 
-    const verificationHeader = request.headers.get("Plaid-Verification");
-    if (!verificationHeader) {
-      return NextResponse.json(
-        { success: false, error: "Missing Plaid-Verification header" },
-        { status: 401 },
-      );
-    }
-
-    try {
-      await verifyPlaidWebhook(rawBody, verificationHeader);
-    } catch (verifyError) {
-      logError("plaid-webhook.verification-failed", verifyError);
-      return NextResponse.json(
-        { success: false, error: "Webhook verification failed" },
-        { status: 401 },
-      );
-    }
-
-    const body = JSON.parse(rawBody);
-    const webhookType = body.webhook_type as string;
-    const webhookCode = body.webhook_code as string;
-
-    console.log(
-      `[plaid-webhook] ${JSON.stringify({
-        webhook_type: webhookType,
-        webhook_code: webhookCode,
-        item_id: body.item_id ?? null,
-        environment: body.environment ?? null,
-        initial_update_complete: body.initial_update_complete ?? null,
-        historical_update_complete: body.historical_update_complete ?? null,
-        new_transactions: body.new_transactions ?? null,
-        error_code: body.error?.error_code ?? null,
-      })}`,
-    );
-
-    if (
-      webhookType === "TRANSACTIONS" &&
-      webhookCode === "SYNC_UPDATES_AVAILABLE"
-    ) {
-      await handleSyncUpdatesAvailable(body);
-    } else if (webhookType === "ITEM" && webhookCode === "ERROR") {
-      await handleItemError(body);
-    } else if (
-      webhookType === "ITEM" &&
-      webhookCode === "PENDING_EXPIRATION"
-    ) {
-      await handlePendingExpiration(body);
-    } else if (
-      webhookType === "TRANSACTIONS" &&
-      webhookCode === "RECURRING_TRANSACTIONS_UPDATE"
-    ) {
-      await handleRecurringTransactionsUpdate(body);
-    } else {
-      console.log(
-        `[plaid-webhook] unhandled ${webhookType}/${webhookCode} item_id=${body.item_id ?? "?"}`,
-      );
-    }
-
-    return NextResponse.json({ success: true, data: { received: true } });
-  } catch (error) {
-    logError("plaid-webhook.processing-failed", error);
-    return NextResponse.json(
-      { success: false, error: "Internal server error" },
-      { status: 500 },
-    );
+  const verification = request.headers.get("plaid-verification");
+  if (!verification) {
+    return json(401, { success: false, error: "Missing Plaid-Verification header" });
   }
-}
-
-// --- Webhook Handlers ---
-
-async function handleSyncUpdatesAvailable(body: unknown) {
-  const parsed = TransactionWebhookSchema.parse(body);
-
-  const item = await db.query.plaidItems.findFirst({
-    where: eq(plaidItems.itemId, parsed.item_id),
-  });
-
-  if (!item) {
-    console.error(
-      `Webhook: plaid item not found for item_id ${parsed.item_id}`,
-    );
-    return;
+  const declaredLength = Number(request.headers.get("content-length") ?? "0");
+  if (declaredLength > MAX_BODY_BYTES) {
+    return json(413, { success: false, error: "Payload too large" });
+  }
+  const rawBody = await request.text();
+  if (rawBody.length > MAX_BODY_BYTES) {
+    return json(413, { success: false, error: "Payload too large" });
   }
 
   try {
-    await syncTransactions(item.id);
+    await verifyPlaidWebhook(rawBody, verification);
   } catch (error) {
-    logError("plaid-webhook.sync-failed", error, { plaidItemRowId: item.id });
-    return;
+    if (error instanceof WebhookVerificationError && error.kind === "invalid") {
+      console.warn(`[plaid-webhook] rejected: ${error.message}`);
+      return json(401, { success: false, error: "Webhook verification failed" });
+    }
+    logError("plaid-webhook.verification-unavailable", error);
+    return json(503, { success: false, error: "Verification temporarily unavailable" });
   }
 
-  // Backfill recurring streams once: either Plaid signals historical sync is
-  // complete, or this Item was linked before the recurring feature shipped and
-  // has no streams yet.
+  let body: unknown;
   try {
-    const shouldFetch =
-      parsed.historical_update_complete === true ||
-      (await isMissingRecurringStreams(item.id));
-    if (shouldFetch) {
-      await fetchRecurringTransactions(item.id);
-    }
+    body = JSON.parse(rawBody);
+  } catch {
+    return json(400, { success: false, error: "Invalid JSON" });
+  }
+  const envelope = Envelope.safeParse(body);
+  if (!envelope.success) {
+    return json(400, { success: false, error: "Invalid webhook payload" });
+  }
+
+  let handled: Handled;
+  try {
+    handled = await handleWebhook(envelope.data, body);
   } catch (error) {
-    logError("plaid-webhook.recurring-after-sync-failed", error, {
-      plaidItemRowId: item.id,
+    // Our database failed: let Plaid redeliver.
+    logError("plaid-webhook.processing-failed", error, {
+      webhookType: envelope.data.webhook_type,
+      webhookCode: envelope.data.webhook_code,
     });
-  }
-}
-
-async function isMissingRecurringStreams(plaidItemRowId: string) {
-  const existing = await db.query.recurringStreams.findFirst({
-    where: eq(recurringStreams.plaidItemId, plaidItemRowId),
-  });
-  return !existing;
-}
-
-async function handleRecurringTransactionsUpdate(body: unknown) {
-  const parsed = RecurringTransactionsUpdateSchema.parse(body);
-
-  const item = await db.query.plaidItems.findFirst({
-    where: eq(plaidItems.itemId, parsed.item_id),
-  });
-  if (!item) {
-    console.error(
-      `Webhook: plaid item not found for item_id ${parsed.item_id}`,
-    );
-    return;
+    return json(500, { success: false, error: "Internal server error" });
   }
 
-  try {
-    await fetchRecurringTransactions(item.id);
-  } catch (error) {
-    logError("plaid-webhook.recurring-update-failed", error, {
-      plaidItemRowId: item.id,
-    });
+  if (handled.itemRowId && handled.action === "drain") {
+    drainItemSoon(handled.itemRowId);
   }
+
+  console.log(
+    `[plaid-webhook] ${JSON.stringify({
+      type: envelope.data.webhook_type,
+      code: envelope.data.webhook_code,
+      item: shortId(envelope.data.item_id),
+      env: envelope.data.environment ?? null,
+      action: handled.action,
+      ms: Math.round(performance.now() - startedAt),
+    })}`,
+  );
+  return json(200, { success: true, data: { received: true } });
 }
 
-async function handleItemError(body: unknown) {
-  const parsed = ItemErrorWebhookSchema.parse(body);
-
-  if (parsed.error?.error_code === "ITEM_LOGIN_REQUIRED") {
-    await db
-      .update(plaidItems)
-      .set({ status: "login_required", updatedAt: new Date() })
-      .where(eq(plaidItems.itemId, parsed.item_id));
-  } else {
-    console.error(
-      `Item error webhook: ${parsed.error?.error_code} for item ${parsed.item_id}`,
-    );
-  }
+function shortId(id: string | undefined): string | null {
+  return id ? `${id.slice(0, 6)}…` : null;
 }
 
-async function handlePendingExpiration(body: unknown) {
-  const parsed = ItemPendingExpirationSchema.parse(body);
+/**
+ * Apply a verified webhook: at most one or two short statements, never a
+ * Plaid call. Returns the item row to drain, if any.
+ */
+async function handleWebhook(
+  envelope: z.infer<typeof Envelope>,
+  body: unknown,
+): Promise<Handled> {
+  const { webhook_type: type, webhook_code: code, item_id: itemId } = envelope;
+  if (!itemId) return { itemRowId: null, action: "ignored" };
 
-  await db
+  if (type === "TRANSACTIONS") {
+    if (code === "SYNC_UPDATES_AVAILABLE") {
+      const parsed = SyncUpdatesAvailable.safeParse(body);
+      const historical = parsed.success && parsed.data.historical_update_complete === true;
+      const id = await stampItem(itemId, {
+        syncRequestedAt: sql`now()`,
+        ...(historical
+          ? {
+              historicalUpdateCompleteAt: sql`COALESCE(${plaidItems.historicalUpdateCompleteAt}, now())`,
+            }
+          : {}),
+      });
+      return { itemRowId: id, action: id ? "drain" : "unknown-item" };
+    }
+    if (code === "RECURRING_TRANSACTIONS_UPDATE") {
+      const id = await stampItem(itemId, {
+        syncRequestedAt: sql`now()`,
+        recurringRequestedAt: sql`now()`,
+      });
+      return { itemRowId: id, action: id ? "drain" : "unknown-item" };
+    }
+    if (LEGACY_TRANSACTION_CODES.has(code)) {
+      return { itemRowId: null, action: "ignored" };
+    }
+    return { itemRowId: null, action: "unhandled" };
+  }
+
+  if (type === "ITEM") {
+    switch (code) {
+      case "ERROR": {
+        const parsed = ItemError.safeParse(body);
+        const errorCode = parsed.success ? parsed.data.error?.error_code : undefined;
+        const status = statusForPlaidErrorCode(errorCode);
+        const id = await stampItem(itemId, {
+          lastSyncErrorCode: errorCode ?? "ITEM_ERROR",
+          ...(status ? { status } : {}),
+          ...(status ? { attention: status } : {}),
+        });
+        return { itemRowId: id, action: status ?? "error-recorded" };
+      }
+      case "LOGIN_REPAIRED": {
+        // The item healed on its own: silence every prompt (W5 contract) and sync.
+        const id = await stampItem(itemId, {
+          status: sql`CASE WHEN ${plaidItems.status} IN (${terminalStatusListSql}) THEN ${plaidItems.status} ELSE 'active' END`,
+          attention: null,
+          lastSyncErrorCode: null,
+          syncRequestedAt: sql`now()`,
+        });
+        return { itemRowId: id, action: id ? "drain" : "unknown-item" };
+      }
+      case "PENDING_DISCONNECT": // US/CA: ~7 days before the item disconnects
+      case "PENDING_EXPIRATION": {
+        // UK/EU consent expiry. Never blocks sync; the user is prompted to
+        // re-consent through update mode.
+        const parsed = PendingConsent.safeParse(body);
+        const expires = parsed.success ? parsed.data.consent_expiration_time : null;
+        const expiresAt = expires && !Number.isNaN(Date.parse(expires)) ? new Date(expires) : null;
+        const id = await stampItem(itemId, {
+          attention: code === "PENDING_DISCONNECT" ? "pending_disconnect" : "pending_expiration",
+          consentExpiresAt: expiresAt ?? sql`now() + interval '7 days'`,
+        });
+        return { itemRowId: id, action: "attention" };
+      }
+      case "NEW_ACCOUNTS_AVAILABLE": {
+        const id = await stampItem(itemId, { attention: "new_accounts_available" });
+        return { itemRowId: id, action: "attention" };
+      }
+      case "USER_PERMISSION_REVOKED": {
+        const id = await stampItem(itemId, {
+          status: "revoked",
+          attention: "revoked",
+          lastSyncErrorCode: "USER_PERMISSION_REVOKED",
+        });
+        return { itemRowId: id, action: "revoked" };
+      }
+      case "USER_ACCOUNT_REVOKED": {
+        // Account-level revocation (Plaid: the item keeps working for its
+        // other accounts). Close that account; without an account id, treat
+        // the whole item as revoked.
+        const parsed = UserAccountRevoked.safeParse(body);
+        const accountId = parsed.success ? parsed.data.account_id : null;
+        if (!accountId) {
+          const id = await stampItem(itemId, {
+            status: "revoked",
+            attention: "revoked",
+            lastSyncErrorCode: "USER_ACCOUNT_REVOKED",
+          });
+          return { itemRowId: id, action: "revoked" };
+        }
+        const closed = await db
+          .update(financialAccounts)
+          .set({ closedAt: sql`now()` })
+          .where(
+            and(
+              eq(financialAccounts.plaidAccountId, accountId),
+              isNull(financialAccounts.closedAt),
+              sql`${financialAccounts.plaidItemId} = (SELECT id FROM ${plaidItems} WHERE item_id = ${itemId})`,
+            ),
+          )
+          .returning({ id: financialAccounts.plaidItemId });
+        return { itemRowId: closed[0]?.id ?? null, action: "account-closed" };
+      }
+      case "WEBHOOK_UPDATE_ACKNOWLEDGED":
+        return { itemRowId: null, action: "ignored" };
+      default:
+        return { itemRowId: null, action: "unhandled" };
+    }
+  }
+
+  return { itemRowId: null, action: "unhandled" };
+}
+
+/** One UPDATE by Plaid item_id; returns the row id, or null for an unknown item. */
+async function stampItem(
+  plaidItemId: string,
+  set: Partial<Record<keyof typeof plaidItems.$inferInsert, unknown>>,
+): Promise<string | null> {
+  const rows = await db
     .update(plaidItems)
-    .set({ status: "pending_expiration", updatedAt: new Date() })
-    .where(eq(plaidItems.itemId, parsed.item_id));
+    .set(set as Partial<typeof plaidItems.$inferInsert>)
+    .where(eq(plaidItems.itemId, plaidItemId))
+    .returning({ id: plaidItems.id });
+  return rows[0]?.id ?? null;
 }

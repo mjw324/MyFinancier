@@ -1,41 +1,56 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronUp } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useEffect, useState } from "react";
+import { AlertTriangle, ChevronDown, ChevronUp, Info } from "lucide-react";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-import { formatCurrency, formatDate } from "@/lib/utils/format";
+import { formatCurrency } from "@/lib/utils/format";
 import { StreamDetailSheet } from "./stream-detail-sheet";
 
-interface UpcomingBill {
+interface ForecastItem {
   stream_id: string;
+  label: string;
   date: string;
+  due_date: string;
   amount: number;
-  merchant_name: string | null;
-  description: string;
-  flow_type: "inflow" | "outflow";
-  has_price_change: boolean;
+  kind: "bill" | "card_payment" | "income" | "transfer" | "other_inflow";
+  late: boolean;
   tentative: boolean;
+  has_price_change: boolean;
 }
 
 interface SafeToSpendData {
-  current_balance: number;
-  projected_balance: number;
-  predicted_inflows: number;
-  predicted_outflows: number;
-  safe_to_spend: number;
+  today: string;
   through: string;
-  horizon_source: string;
-  upcoming_bills: UpcomingBill[];
+  horizon_source: "next_paycheck" | "default_30d";
+  paycheck: ForecastItem | null;
+  cash: number;
+  cash_accounts: Array<{ id: string; name: string; balance: number; is_stale: boolean }>;
+  card_mode: "payment_stream" | "card_balance";
+  card_obligations: number;
+  card_balances: number;
+  bills: number;
+  safe_to_spend: number;
+  upcoming: ForecastItem[];
+  tentative: ForecastItem[];
+  possibly_ended: Array<{
+    stream_id: string;
+    label: string;
+    last_seen: string | null;
+    expected: string | null;
+    amount: number;
+  }>;
+  excluded_accounts: Array<{ id: string; name: string; reason: "unavailable" | "foreign_currency" }>;
+  stale_accounts: Array<{ id: string; name: string; as_of: string | null }>;
 }
 
 interface ApiResponse {
@@ -44,38 +59,35 @@ interface ApiResponse {
   error?: string;
 }
 
-type Horizon = "next_paycheck" | "30_days" | "end_of_month";
+/** "2026-10-20" → "Tue, Oct 20" (calendar date; formatted in UTC so it never shifts). */
+function day(ymd: string | null): string {
+  if (!ymd) return "—";
+  return new Date(`${ymd}T00:00:00Z`).toLocaleDateString("en-US", {
+    timeZone: "UTC",
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+}
 
 export function SafeToSpend() {
-  const [horizon, setHorizon] = useState<Horizon>("next_paycheck");
   const [data, setData] = useState<SafeToSpendData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [openStreamId, setOpenStreamId] = useState<string | null>(null);
 
-  const through = useMemo(() => horizonToThrough(horizon), [horizon]);
-
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    setError(null);
-    const url =
-      through === null
-        ? "/api/safe-to-spend"
-        : `/api/safe-to-spend?through=${through}`;
-    fetch(url)
+    fetch("/api/safe-to-spend")
       .then((r) => r.json() as Promise<ApiResponse>)
       .then((res) => {
         if (cancelled) return;
-        if (res.success && res.data) {
-          setData(res.data);
-        } else {
-          setError(res.error ?? "Failed to load");
-        }
+        if (res.success && res.data) setData(res.data);
+        else setError(res.error ?? "Failed to load");
       })
-      .catch((e) => {
-        if (!cancelled) setError(String(e));
+      .catch(() => {
+        if (!cancelled) setError("Could not load safe to spend.");
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -83,127 +95,146 @@ export function SafeToSpend() {
     return () => {
       cancelled = true;
     };
-  }, [through]);
+  }, []);
 
-  const isNegative = data ? data.safe_to_spend < 0 : false;
+  const description = !data
+    ? "What you can spend before your next paycheck"
+    : data.horizon_source === "next_paycheck"
+      ? `Before your next paycheck on ${day(data.paycheck?.date ?? null)}`
+      : `Next 30 days, through ${day(data.through)} · no paycheck detected`;
+
+  const notCounted =
+    (data?.tentative.length ?? 0) + (data?.possibly_ended.length ?? 0);
+  const listCount = (data?.upcoming.length ?? 0) + notCounted;
 
   return (
     <Card>
-      <CardHeader className="flex-row items-center justify-between space-y-0 gap-2">
+      <CardHeader>
         <CardTitle className="text-base">Safe to spend</CardTitle>
-        <Select
-          value={horizon}
-          onValueChange={(v) => setHorizon(v as Horizon)}
-        >
-          <SelectTrigger className="h-8 w-auto min-w-[120px] text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent align="end">
-            <SelectItem value="next_paycheck">Next paycheck</SelectItem>
-            <SelectItem value="30_days">30 days</SelectItem>
-            <SelectItem value="end_of_month">End of month</SelectItem>
-          </SelectContent>
-        </Select>
+        <CardDescription>{description}</CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="flex flex-col gap-4">
         {error && <p className="text-sm text-destructive">{error}</p>}
 
         {loading && !data ? (
-          <div className="space-y-2">
+          <div className="flex flex-col gap-2">
             <Skeleton className="h-10 w-40" />
             <Skeleton className="h-4 w-3/4" />
+            <Skeleton className="h-4 w-2/3" />
           </div>
         ) : data ? (
           <>
             <div
               className={cn(
                 "text-3xl font-semibold tabular-nums",
-                isNegative && "text-rose-600 dark:text-rose-400",
+                data.safe_to_spend < 0 && "text-destructive",
               )}
             >
               {formatCurrency(data.safe_to_spend)}
             </div>
-            <p className="text-sm text-muted-foreground mt-1">
-              after {formatCurrency(data.predicted_outflows)} in upcoming bills
-              through {formatDate(new Date(data.through))}
-            </p>
 
-            <div className="mt-4 grid grid-cols-3 gap-2 text-xs">
-              <Stat
-                label="Balance"
-                value={data.projected_balance}
-                sublabel={
-                  Math.abs(data.projected_balance - data.current_balance) > 0.005
-                    ? `${formatCurrency(data.current_balance)} settled`
-                    : undefined
+            <dl className="flex flex-col gap-1.5 text-sm">
+              <Row
+                label={`Cash in ${data.cash_accounts.length} checking/savings account${data.cash_accounts.length === 1 ? "" : "s"}`}
+                value={data.cash}
+              />
+              <Row
+                label={`Bills before ${data.horizon_source === "next_paycheck" ? "payday" : day(data.through)} (${data.upcoming.filter((u) => u.kind === "bill").length})`}
+                value={-data.bills}
+              />
+              <Row
+                label={
+                  data.card_mode === "payment_stream"
+                    ? `Card payments due (${data.upcoming.filter((u) => u.kind === "card_payment").length})`
+                    : "Card balances (no payment schedule found)"
                 }
+                value={-data.card_obligations}
               />
-              <Stat
-                label="Inflows"
-                value={data.predicted_inflows}
-                positive
-              />
-              <Stat
-                label="Outflows"
-                value={data.predicted_outflows}
-                negative
-              />
-            </div>
+            </dl>
 
-            {data.upcoming_bills.length > 0 && (
-              <div className="mt-4">
+            {data.paycheck && (
+              <p className="text-xs text-muted-foreground">
+                Next paycheck: {data.paycheck.label} ·{" "}
+                {formatCurrency(data.paycheck.amount)} expected {day(data.paycheck.date)}{" "}
+                (not included)
+              </p>
+            )}
+
+            {(data.stale_accounts.length > 0 || data.excluded_accounts.length > 0) && (
+              <div className="flex flex-col gap-1 text-xs text-muted-foreground">
+                {data.stale_accounts.map((a) => (
+                  <p key={a.id} className="flex items-start gap-1.5">
+                    <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+                    {a.name}: balance last updated{" "}
+                    {a.as_of ? new Date(a.as_of).toLocaleDateString() : "never"}
+                  </p>
+                ))}
+                {data.excluded_accounts.map((a) => (
+                  <p key={a.id} className="flex items-start gap-1.5">
+                    <Info className="mt-0.5 size-3.5 shrink-0" />
+                    {a.name} not included (
+                    {a.reason === "unavailable" ? "balance unavailable" : "not in USD"})
+                  </p>
+                ))}
+              </div>
+            )}
+
+            {listCount > 0 && (
+              <div className="flex flex-col gap-2">
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={() => setExpanded((v) => !v)}
-                  className="px-0"
+                  className="self-start px-0"
+                  aria-expanded={expanded}
                 >
-                  {expanded ? (
-                    <ChevronUp className="size-4" />
-                  ) : (
-                    <ChevronDown className="size-4" />
-                  )}
-                  {data.upcoming_bills.length} upcoming
+                  {expanded ? <ChevronUp /> : <ChevronDown />}
+                  {data.upcoming.length} counted
+                  {notCounted > 0 && ` · ${notCounted} not counted`}
                 </Button>
                 {expanded && (
-                  <ul className="mt-2 divide-y rounded-md border">
-                    {data.upcoming_bills.map((b, i) => (
-                      <li
-                        key={`${b.stream_id}-${b.date}-${i}`}
-                        className="flex items-center justify-between px-3 py-2 text-sm"
-                      >
-                        <button
-                          type="button"
-                          onClick={() => setOpenStreamId(b.stream_id)}
-                          className="text-left flex-1 hover:underline"
-                        >
-                          <p className="font-medium">
-                            {b.merchant_name || b.description}
-                            {b.merchant_name &&
-                              b.description &&
-                              b.merchant_name.trim().toLowerCase() !==
-                                b.description.trim().toLowerCase() &&
-                              "…"}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            {formatDate(new Date(b.date))}
-                            {b.tentative && " · tentative"}
-                          </p>
-                        </button>
-                        <span
-                          className={cn(
-                            "font-medium tabular-nums",
-                            b.flow_type === "inflow"
-                              ? "text-green-600 dark:text-green-400"
-                              : "text-foreground",
-                          )}
-                        >
-                          {b.flow_type === "inflow" ? "+" : "-"}
-                          {formatCurrency(Math.abs(b.amount))}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
+                  <div className="flex flex-col gap-3">
+                    {data.upcoming.length > 0 && (
+                      <ItemList items={data.upcoming} onOpen={setOpenStreamId} />
+                    )}
+                    {data.tentative.length > 0 && (
+                      <div className="flex flex-col gap-1">
+                        <p className="text-xs font-medium text-muted-foreground">
+                          Tentative — newly detected, not counted
+                        </p>
+                        <ItemList items={data.tentative} onOpen={setOpenStreamId} muted />
+                      </div>
+                    )}
+                    {data.possibly_ended.length > 0 && (
+                      <div className="flex flex-col gap-1">
+                        <p className="text-xs font-medium text-muted-foreground">
+                          Possibly ended — no charge for over a cycle, not counted
+                        </p>
+                        <ul className="divide-y rounded-md border">
+                          {data.possibly_ended.map((p) => (
+                            <li
+                              key={p.stream_id}
+                              className="flex items-center justify-between gap-3 px-3 py-2 text-sm text-muted-foreground"
+                            >
+                              <button
+                                type="button"
+                                onClick={() => setOpenStreamId(p.stream_id)}
+                                className="min-w-0 flex-1 text-left hover:underline"
+                              >
+                                <p className="truncate">{p.label}</p>
+                                <p className="text-xs">
+                                  Last seen {day(p.last_seen)} · expected {day(p.expected)}
+                                </p>
+                              </button>
+                              <span className="shrink-0 tabular-nums">
+                                {formatCurrency(p.amount)}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             )}
@@ -218,51 +249,56 @@ export function SafeToSpend() {
   );
 }
 
-function Stat({
-  label,
-  value,
-  positive,
-  negative,
-  sublabel,
-}: {
-  label: string;
-  value: number;
-  positive?: boolean;
-  negative?: boolean;
-  sublabel?: string;
-}) {
+function Row({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-md border p-2">
-      <p className="text-muted-foreground">{label}</p>
-      <p
-        className={cn(
-          "font-medium tabular-nums mt-0.5",
-          positive && "text-green-600 dark:text-green-400",
-          negative && "text-rose-600 dark:text-rose-400",
-        )}
-      >
-        {formatCurrency(value)}
-      </p>
-      {sublabel && (
-        <p className="text-[10px] text-muted-foreground mt-0.5">{sublabel}</p>
-      )}
+    <div className="flex items-baseline justify-between gap-3">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="shrink-0 font-medium tabular-nums">
+        {value < 0 ? "−" : ""}
+        {formatCurrency(Math.abs(value))}
+      </dd>
     </div>
   );
 }
 
-function horizonToThrough(horizon: Horizon): string | null {
-  if (horizon === "next_paycheck") return null; // server picks
-  const today = new Date();
-  if (horizon === "30_days") {
-    const d = new Date(today);
-    d.setDate(d.getDate() + 30);
-    return iso(d);
-  }
-  // end_of_month
-  const d = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-  return iso(d);
+function ItemList({
+  items,
+  onOpen,
+  muted,
+}: {
+  items: ForecastItem[];
+  onOpen: (id: string) => void;
+  muted?: boolean;
+}) {
+  return (
+    <ul className="divide-y rounded-md border">
+      {items.map((b, i) => (
+        <li
+          key={`${b.stream_id}-${b.date}-${i}`}
+          className={cn(
+            "flex items-center justify-between gap-3 px-3 py-2 text-sm",
+            muted && "text-muted-foreground",
+          )}
+        >
+          <button
+            type="button"
+            onClick={() => onOpen(b.stream_id)}
+            className="min-w-0 flex-1 text-left hover:underline"
+          >
+            <p className="truncate font-medium">{b.label}</p>
+            <p className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+              {b.late ? `Was due ${day(b.due_date)}` : day(b.date)}
+              {b.kind === "card_payment" && <Badge variant="outline">Card payment</Badge>}
+              {b.late && <Badge variant="outline">Late</Badge>}
+              {b.has_price_change && <Badge variant="outline">Price changed</Badge>}
+            </p>
+          </button>
+          <span className="shrink-0 font-medium tabular-nums">
+            −{formatCurrency(b.amount)}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
 }
 
-function iso(d: Date) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
