@@ -196,21 +196,29 @@ pnpm db:seed       # optional: sandbox users with linked, synced Plaid data
 ```
 
 `pnpm db:seed` (local database and `PLAID_ENV=sandbox` only) creates verified
-users that sign in with password `Sandbox-pass1`, each linked to a Plaid sandbox
-persona at First Platypus Bank:
+users that sign in with password `Sandbox-pass1`. Their banks are Plaid sandbox
+[custom users](https://plaid.com/docs/sandbox/user-custom/) whose accounts and
+transactions are generated in `scripts/seed-profiles.ts` (deterministic, ending
+yesterday), so Plaid enriches them and detects recurring streams like a real bank
+and the data runs through the app's full sync pipeline. Seeding takes about two
+minutes.
 
-| Email | Plaid sandbox user | Data |
+| Email | Profile | Exercises |
 | --- | --- | --- |
-| `dynamic@finance.localhost` | `user_transactions_dynamic` | Realistic history, credit card and loans; new transactions on refresh |
-| `yuppie@finance.localhost` | `user_yuppie` | Young-professional spending |
-| `salaried@finance.localhost` | `user_credit_bonus` | Multiple salary streams with bonuses |
-| `smallbiz@finance.localhost` | `user_small_business` | Small-business transactions |
+| `alex@finance.localhost` | Salaried renter, 2 years, 3 banks | Every flow class, transfer and card-payment pairs, biweekly paycheck (safe to spend), subscriptions with a price change, a cancelled and a new subscription, travel spike, budgets on every period, spending rules, custom names |
+| `jordan@finance.localhost` | Freelancer, 1 year | Irregular income (no paycheck), estimated taxes, card balance carried with interest, cash-heavy spending |
+| `taylor@finance.localhost` | Family homeowner, 18 months, 3 banks | Two salaries, mortgage and auto loan, yearly bills, transfers to an unlinked own account, a connection that needs re-login |
+| `sammy@finance.localhost` | Student, 10 weeks | Weekly pay, money from parents, thin balances, new-user states |
+| `newbie@finance.localhost` | Nothing linked | Empty states |
+| `dynamic@finance.localhost` | Plaid `user_transactions_dynamic` | New transactions on each Settings → Sync |
 
-It is safe to re-run. To start over: `dropdb finance_app_dev && createdb finance_app_dev && pnpm db:migrate && pnpm db:seed`.
+Seed one profile with `pnpm dlx tsx@4.19.2 scripts/seed-dev.ts --env-file .env --only alex`.
+Re-running is safe (existing users and connections are kept). To start over:
+`dropdb finance_app_dev && createdb finance_app_dev && pnpm db:migrate && pnpm db:seed`.
 
-To link more banks by hand, use Plaid Link in the app with sandbox credentials
-`user_good` / `pass_good` (or any persona username from the Plaid dashboard's
-Sandbox page).
+To add or change a profile, edit `scripts/seed-profiles.ts`; its unit test checks
+each connection stays under Plaid's request size limit. To link more banks by
+hand, use Plaid Link in the app with sandbox credentials `user_good` / `pass_good`.
 
 When the schema changes, `pnpm db:generate` writes a new migration from it.
 
