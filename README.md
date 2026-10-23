@@ -148,9 +148,10 @@ financial table references `user.id` and has **Row-Level Security enabled**:
 
 - Node.js 22+
 - pnpm 11+ (`corepack enable`)
-- A Supabase (or other PostgreSQL) database
-- A [Plaid dashboard](https://dashboard.plaid.com) account (sandbox is fine for dev)
-- An Amazon SES setup for transactional email (optional for local dev)
+- PostgreSQL for local development (e.g. `brew install postgresql@15 && brew services start postgresql@15`);
+  production uses Supabase
+- A [Plaid dashboard](https://dashboard.plaid.com) account (sandbox keys are all you need for dev)
+- An Amazon SES setup for transactional email (not needed locally with `EMAIL_TRANSPORT=console`)
 
 ### 1. Install dependencies
 
@@ -180,13 +181,38 @@ cp env.example .env
 | `ENCRYPTION_KEY` | 32-byte hex key for token encryption — `openssl rand -hex 32` |
 | `AWS_SES_REGION`, `AWS_SES_ACCESS_KEY_ID`, `AWS_SES_SECRET_ACCESS_KEY` | SES credentials |
 | `SES_FROM_EMAIL`, `SES_FROM_NAME` | Sender identity |
+| `EMAIL_TRANSPORT` | `console` prints emails (verification links, OTP codes) to the dev-server log instead of sending them; ignored in production builds |
+| `PLAID_SYNC_SWEEP` | `off` disables the background recovery sweep |
 
 ### 3. Set up the database
 
+For local development use a database of your own, never the production one:
+
 ```bash
-pnpm db:generate   # generate migrations from schema
+createdb finance_app_dev
+# .env: DATABASE_URL=DIRECT_URL=postgres://<you>@localhost:5432/finance_app_dev
 pnpm db:migrate    # apply schema to the database (drizzle-kit push)
+pnpm db:seed       # optional: sandbox users with linked, synced Plaid data
 ```
+
+`pnpm db:seed` (local database and `PLAID_ENV=sandbox` only) creates verified
+users that sign in with password `Sandbox-pass1`, each linked to a Plaid sandbox
+persona at First Platypus Bank:
+
+| Email | Plaid sandbox user | Data |
+| --- | --- | --- |
+| `dynamic@finance.localhost` | `user_transactions_dynamic` | Realistic history, credit card and loans; new transactions on refresh |
+| `yuppie@finance.localhost` | `user_yuppie` | Young-professional spending |
+| `salaried@finance.localhost` | `user_credit_bonus` | Multiple salary streams with bonuses |
+| `smallbiz@finance.localhost` | `user_small_business` | Small-business transactions |
+
+It is safe to re-run. To start over: `dropdb finance_app_dev && createdb finance_app_dev && pnpm db:migrate && pnpm db:seed`.
+
+To link more banks by hand, use Plaid Link in the app with sandbox credentials
+`user_good` / `pass_good` (or any persona username from the Plaid dashboard's
+Sandbox page).
+
+When the schema changes, `pnpm db:generate` writes a new migration from it.
 
 ### 4. Run the dev server
 
@@ -209,6 +235,7 @@ Open [http://localhost:3000](http://localhost:3000).
 | `pnpm lint` | Run ESLint |
 | `pnpm db:generate` | Generate Drizzle migrations |
 | `pnpm db:migrate` | Push schema to the database |
+| `pnpm db:seed` | Seed a local database with Plaid sandbox users |
 | `pnpm db:studio` | Open Drizzle Studio |
 | `pnpm test` | Run the Vitest watcher |
 | `pnpm test:run` | Run all tests once |
