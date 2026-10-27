@@ -18,6 +18,10 @@
   "dependencies": {
     "@ai-sdk/amazon-bedrock": "^5.0.124",
     "@ai-sdk/anthropic": "^4.0.88",
+    "@ai-sdk/react": "4.0.157",
+    "@assistant-ui/react": "0.15.31",
+    "@assistant-ui/react-ai-sdk": "1.4.20",
+    "@assistant-ui/react-markdown": "0.14.24",
     "@aws-sdk/client-ses": "^3.1116.0",
     "@hookform/resolvers": "^5.9.1",
     "@radix-ui/react-label": "^2.1.15",
