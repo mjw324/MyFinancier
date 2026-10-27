@@ -127,6 +127,20 @@ Required (add to `.env.local` and Railway):
 - `PLAID_WEBHOOK_URL` — Public webhook URL (ngrok for local dev)
 - `ENCRYPTION_KEY` — 32-byte hex string for AES-256-GCM encryption of access tokens
 
+AI features (`src/lib/ai/`; all off unless `AI_ENABLED=true`):
+- `AI_ENABLED` — `"true"` turns AI features on (kill switch)
+- `AI_PROVIDER` — `"anthropic"` (default) | `"bedrock"` (zero-data-retention path)
+- `ANTHROPIC_API_KEY` — when `AI_PROVIDER=anthropic`
+- `AWS_BEDROCK_REGION`, `AWS_BEDROCK_ACCESS_KEY_ID`, `AWS_BEDROCK_SECRET_ACCESS_KEY` — when `AI_PROVIDER=bedrock`
+- `AI_MODEL_SMALL`, `AI_MODEL_MID`, `AI_MODEL_LARGE` — model id overrides (required on Bedrock)
+- `AI_MONTHLY_BUDGET_USD` — per-user monthly AI spend cap (default 2)
+
+AI conventions: callers request a tier via `getModel(tier)`, pass
+`telemetry: aiTelemetry(feature)` (never records prompts or outputs), check
+`hasBudgetRemaining` before and `recordAiUsage` after each call. Model calls
+never receive access tokens, account numbers, or user names/emails, and the
+model never does arithmetic — code computes every figure.
+
 ### Deployment (Railway)
 - Use standalone Next.js output mode with a multi-stage Dockerfile.
 - Set all env vars in Railway dashboard.
