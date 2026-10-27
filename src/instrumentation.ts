@@ -7,7 +7,8 @@
  * processed (e.g. the process was killed during a deploy before an `after()`
  * drain ran) or whose lease expired mid-run, and requests a sync for active
  * items with no successful sync in 24 hours. The same tick runs due weekly AI
- * digests (src/lib/insights/jobs.ts; a no-op unless AI_ENABLED=true). The
+ * digests (src/lib/insights/jobs.ts; a no-op unless AI_ENABLED=true) and
+ * deletes chat transcripts past their 90-day retention (lib/chat/store.ts). The
  * timers are unref'd so they never keep the process alive, and register()
  * does not wait for them.
  */
@@ -42,6 +43,7 @@ export async function register(): Promise<void> {
 
     const { sweepPlaidItems } = await import("./lib/plaid/jobs");
     const { sweepDigests } = await import("./lib/insights/jobs");
+    const { purgeExpiredChats } = await import("./lib/chat/store");
     const { logError } = await import("./lib/logging");
 
     let running = false;
@@ -61,6 +63,12 @@ export async function register(): Promise<void> {
         if (ran > 0) console.log(`[digest-sweep] ${JSON.stringify({ ran })}`);
       } catch (error) {
         logError("digest-sweep.failed", error);
+      }
+      try {
+        const { messages, chats } = await purgeExpiredChats();
+        if (messages > 0 || chats > 0) console.log(`[chat-purge] ${JSON.stringify({ messages, chats })}`);
+      } catch (error) {
+        logError("chat-purge.failed", error);
       } finally {
         running = false;
       }
