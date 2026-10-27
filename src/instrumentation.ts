@@ -6,8 +6,10 @@
  * PLAID_SYNC_SWEEP=off. The sweep drains items whose sync request was never
  * processed (e.g. the process was killed during a deploy before an `after()`
  * drain ran) or whose lease expired mid-run, and requests a sync for active
- * items with no successful sync in 24 hours. The timers are unref'd so they
- * never keep the process alive, and register() does not wait for them.
+ * items with no successful sync in 24 hours. The same tick runs due weekly AI
+ * digests (src/lib/insights/jobs.ts; a no-op unless AI_ENABLED=true). The
+ * timers are unref'd so they never keep the process alive, and register()
+ * does not wait for them.
  */
 
 const SWEEP_INITIAL_DELAY_MS = 60_000;
@@ -39,6 +41,7 @@ export async function register(): Promise<void> {
     globalThis.__plaidSweepStarted = true;
 
     const { sweepPlaidItems } = await import("./lib/plaid/jobs");
+    const { sweepDigests } = await import("./lib/insights/jobs");
     const { logError } = await import("./lib/logging");
 
     let running = false;
@@ -52,6 +55,12 @@ export async function register(): Promise<void> {
         }
       } catch (error) {
         logError("plaid-sweep.failed", error);
+      }
+      try {
+        const { ran } = await sweepDigests();
+        if (ran > 0) console.log(`[digest-sweep] ${JSON.stringify({ ran })}`);
+      } catch (error) {
+        logError("digest-sweep.failed", error);
       } finally {
         running = false;
       }
