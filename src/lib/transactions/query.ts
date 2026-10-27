@@ -42,6 +42,9 @@ const FIELDS = {
     }
     return d;
   }),
+  // Amount magnitude in dollars, either direction ("over $50").
+  min: z.coerce.number().finite().min(0).max(10_000_000),
+  max: z.coerce.number().finite().min(0).max(10_000_000),
   page: z.coerce.number().int().min(1).max(100_000),
 } as const;
 
@@ -80,6 +83,13 @@ export function parseTransactionQuery(raw: RawSearchParams): ParsedTransactionQu
 
   let startDate = parsed.from;
   let endDate = parsed.to;
+  let minAmount = parsed.min;
+  let maxAmount = parsed.max;
+  if (minAmount !== undefined && maxAmount !== undefined && minAmount > maxAmount) {
+    [minAmount, maxAmount] = [maxAmount, minAmount];
+    [params.min, params.max] = [params.max, params.min];
+  }
+
   if (startDate && endDate && startDate > endDate) {
     [startDate, endDate] = [endDate, startDate];
     [params.from, params.to] = [params.to, params.from];
@@ -100,6 +110,8 @@ export function parseTransactionQuery(raw: RawSearchParams): ParsedTransactionQu
       endDate,
       recurring: parsed.recurring,
       spendingType: parsed.spendingType,
+      minAmount,
+      maxAmount,
     },
     page: parsed.page ?? 1,
     invalid,

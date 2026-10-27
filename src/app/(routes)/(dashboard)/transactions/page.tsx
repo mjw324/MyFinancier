@@ -14,6 +14,7 @@ import { getAccountsByUserId } from "@/lib/db/queries/accounts";
 import { getUserPreferences } from "@/lib/db/queries/user-preferences";
 import { FLOW_CLASS_LABEL } from "@/lib/analytics/flow";
 import { bucketLabel } from "@/lib/analytics/labels";
+import { formatCurrency } from "@/lib/utils/format";
 import {
   parseTransactionQuery,
   type ParsedTransactionQuery,
@@ -29,6 +30,7 @@ import { ExportButton } from "@/components/features/transactions/export-button";
 import { Button } from "@/components/ui/button";
 import { isAiActiveForUser } from "@/lib/ai/consent";
 import { countPendingSuggestions } from "@/lib/categorize/review";
+import { AskSearch } from "./_components/ask-search";
 
 export const metadata: Metadata = {
   title: "MyFinancier — Transactions",
@@ -47,6 +49,8 @@ function drillDownChips(q: ParsedTransactionQuery): FilterChip[] {
     chips.push({ param: "view", label: "Spending, net of refunds & reimbursements" });
   }
   if (f.cost) chips.push({ param: "cost", label: f.cost === "fixed" ? "Fixed costs" : "Variable costs" });
+  if (f.minAmount !== undefined) chips.push({ param: "min", label: `At least ${formatCurrency(f.minAmount)}` });
+  if (f.maxAmount !== undefined) chips.push({ param: "max", label: `At most ${formatCurrency(f.maxAmount)}` });
   return chips;
 }
 
@@ -107,6 +111,8 @@ export default async function TransactionsPage({
           <ExportButton count={totalCount} />
         </div>
       </div>
+
+      {aiActive && <AskSearch />}
 
       <TransactionFiltersUI
         accounts={accountOptions}

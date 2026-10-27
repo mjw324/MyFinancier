@@ -58,6 +58,9 @@ export interface TransactionFilters {
   endDate?: Date;
   recurring?: "all" | "recurring" | "onetime";
   spendingType?: "necessary" | "discretionary" | "unclassified";
+  /** Amount magnitude bounds in dollars, inclusive, either direction. */
+  minAmount?: number;
+  maxAmount?: number;
   /** false = honour the "hide transfers" list preference. */
   includeTransfers?: boolean;
 }
@@ -127,6 +130,12 @@ export function buildFilterConditions(
       )!,
     );
   }
+  if (filters.minAmount !== undefined) {
+    conditions.push(sql`ABS(${transactions.amount}::numeric) >= ${filters.minAmount}`);
+  }
+  if (filters.maxAmount !== undefined) {
+    conditions.push(sql`ABS(${transactions.amount}::numeric) <= ${filters.maxAmount}`);
+  }
   if (filters.recurring === "recurring") {
     conditions.push(isNotNull(transactions.recurringStreamId));
   } else if (filters.recurring === "onetime") {
@@ -190,7 +199,9 @@ export function hasActiveFilters(filters: TransactionFilters): boolean {
       filters.startDate ||
       filters.endDate ||
       (filters.recurring && filters.recurring !== "all") ||
-      filters.spendingType,
+      filters.spendingType ||
+      filters.minAmount !== undefined ||
+      filters.maxAmount !== undefined,
   );
 }
 
