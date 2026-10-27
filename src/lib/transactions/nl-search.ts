@@ -72,7 +72,7 @@ export function searchPrompt(query: string, categories: string[]): string {
   return JSON.stringify({ search: query, categories }, null, 1);
 }
 
-function presetPeriod(preset: (typeof PERIOD_PRESETS)[number], today: Date): Period {
+export function presetPeriod(preset: (typeof PERIOD_PRESETS)[number], today: Date): Period {
   switch (preset) {
     case "this_month":
       return calendarPeriod("month", today);
