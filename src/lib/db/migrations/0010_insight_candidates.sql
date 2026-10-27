@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS "insight_candidates" (
 	"detected_at" timestamp DEFAULT now() NOT NULL,
 	"expires_at" timestamp NOT NULL,
 	"digest_at" timestamp,
+	"digest_rank" integer,
 	"title" text,
 	"body" text,
 	"shown_at" timestamp,

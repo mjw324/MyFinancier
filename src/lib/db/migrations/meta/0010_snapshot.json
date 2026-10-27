@@ -2222,6 +2222,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "digest_rank": {
+          "name": "digest_rank",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
         "title": {
           "name": "title",
           "type": "text",

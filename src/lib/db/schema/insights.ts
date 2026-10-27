@@ -41,6 +41,8 @@ export const insightCandidates = pgTable(
     // Stale findings (a bill already paid, last month's anomaly) stop showing.
     expiresAt: timestamp("expires_at", { mode: "date" }).notNull(),
     digestAt: timestamp("digest_at", { mode: "date" }),
+    // Position the model ranked it at within that digest (0 first).
+    digestRank: integer("digest_rank"),
     title: text("title"),
     body: text("body"),
     shownAt: timestamp("shown_at", { mode: "date" }),
