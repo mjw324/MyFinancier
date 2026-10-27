@@ -16,6 +16,8 @@ import { getUserTimeZone } from "@/lib/utils/user-time";
 import { AiInsightsSwitch } from "@/components/features/settings/ai-insights-switch";
 import { AI_CONSENT_TEXT, getAiConsent } from "@/lib/ai/consent";
 import { isAiEnabled } from "@/lib/ai/models";
+import { MemoriesSection } from "@/components/features/settings/memories-section";
+import { listMemories, MAX_MEMORIES, MAX_MEMORY_CHARS } from "@/lib/chat/memories";
 
 export const metadata: Metadata = {
   title: "MyFinancier — Settings",
@@ -24,13 +26,14 @@ export const metadata: Metadata = {
 export default async function SettingsPage() {
   const session = await getServerSession();
   const user = session!.user;
-  const [plaidItems, spendingRules, categoryRules, prefs, timeZone, aiConsent] = await Promise.all([
+  const [plaidItems, spendingRules, categoryRules, prefs, timeZone, aiConsent, memories] = await Promise.all([
     getPlaidItemsByUserId(user.id),
     listSpendingRules(user.id),
     listCategoryRules(user.id),
     getUserPreferences(user.id),
     getUserTimeZone(),
     getAiConsent(user.id),
+    listMemories(user.id),
   ]);
   const now = new Date();
 
@@ -135,6 +138,19 @@ export default async function SettingsPage() {
             initial={aiConsent.optedIn}
             available={isAiEnabled()}
             consentText={AI_CONSENT_TEXT}
+          />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Assistant memories</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <MemoriesSection
+            memories={memories.map((m) => ({ id: m.id, content: m.content, source: m.source }))}
+            max={MAX_MEMORIES}
+            maxChars={MAX_MEMORY_CHARS}
           />
         </CardContent>
       </Card>
