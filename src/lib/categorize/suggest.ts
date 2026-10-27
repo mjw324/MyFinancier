@@ -17,7 +17,7 @@
  */
 
 import { and, desc, eq, inArray, isNull, not, notExists, or, sql } from "drizzle-orm";
-import { generateText, NoObjectGeneratedError, Output, type LanguageModel } from "ai";
+import { generateText, NoObjectGeneratedError, Output, type LanguageModel, type LanguageModelUsage } from "ai";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { isTransferSql } from "@/lib/analytics/metrics";
@@ -153,7 +153,12 @@ export async function categorizeBatch(input: {
   userId: string;
   fields: Array<Omit<CategorizeItem, "ref">>;
   model: LanguageModel;
+  /** Usage sink; defaults to the user's ai_usage row (the eval script passes its own). */
+  recordUsage?: (usage: LanguageModelUsage) => Promise<void>;
 }): Promise<Array<string>> {
+  const record =
+    input.recordUsage ??
+    ((usage: LanguageModelUsage) => recordAiUsage({ userId: input.userId, feature: "categorize", tier: "small", usage }));
   let output: CategoryAnswer[];
   try {
     const result = await generateText({
@@ -165,13 +170,11 @@ export async function categorizeBatch(input: {
       maxRetries: 1,
       timeout: 60_000,
     });
-    await recordAiUsage({ userId: input.userId, feature: "categorize", tier: "small", usage: result.totalUsage });
+    await record(result.totalUsage);
     output = result.output;
   } catch (error) {
     if (NoObjectGeneratedError.isInstance(error)) {
-      if (error.usage) {
-        await recordAiUsage({ userId: input.userId, feature: "categorize", tier: "small", usage: error.usage });
-      }
+      if (error.usage) await record(error.usage);
       return input.fields.map(() => UNCERTAIN);
     }
     throw error;
