@@ -137,7 +137,10 @@ AI features (`src/lib/ai/`; all off unless `AI_ENABLED=true`):
 - `AI_MODEL_SMALL`, `AI_MODEL_MID`, `AI_MODEL_LARGE` — model id overrides (required on Bedrock)
 - `AI_MONTHLY_BUDGET_USD` — per-user monthly AI spend cap (default 2)
 
-AI conventions: callers request a tier via `getModel(tier)`, pass
+AI conventions: callers request a tier via `getModel(tier)`, set
+`reasoning` (effort) explicitly per feature (low for search, explain and
+chat; medium for the digest and categorization; never above medium on a
+user-facing route), pass
 `telemetry: aiTelemetry(feature)` (never records prompts or outputs), check
 `hasBudgetRemaining` before and `recordAiUsage` after each call. Model calls
 never receive access tokens, account numbers, or user names/emails, and the

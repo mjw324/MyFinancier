@@ -72,6 +72,7 @@ export async function explainSlice(input: {
       instructions: EXPLAIN_INSTRUCTIONS,
       prompt: explainPrompt(slice),
       output: Output.object({ schema: ExplanationSchema }),
+      reasoning: "low", // narrates figures the code already computed
       telemetry: aiTelemetry("explain"),
       maxRetries: 1,
       timeout: 30_000,

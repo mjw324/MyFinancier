@@ -130,6 +130,7 @@ export async function generateDigest(input: {
       instructions: DIGEST_INSTRUCTIONS,
       prompt,
       output: Output.array({ element: DigestItemSchema, maxItems: MAX_DIGEST_ITEMS }),
+      reasoning: "medium", // weekly and in the background; Sonnet would default to high
       telemetry: aiTelemetry("digest"),
       maxRetries: 1,
       timeout: 60_000,

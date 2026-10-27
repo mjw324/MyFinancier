@@ -12,6 +12,14 @@
  */
 
 export type ModelTier = "small" | "mid" | "large";
+
+/**
+ * Reasoning effort, set explicitly on every call as the AI SDK's `reasoning`
+ * option (mapped to effort on Anthropic and Bedrock). Provider defaults are
+ * medium on Haiku 5.5 and high on Sonnet 5.5; user-facing routes never go
+ * above medium.
+ */
+export type Effort = "low" | "medium";
 export type AiProvider = "anthropic" | "bedrock";
 export type Env = Record<string, string | undefined>;
 

@@ -24,7 +24,7 @@ import { isTransferSql } from "@/lib/analytics/metrics";
 import { transactions } from "@/lib/db/schema/transactions";
 import { categorySuggestions } from "@/lib/db/schema/categorize";
 import { getModel, aiTelemetry } from "@/lib/ai/provider";
-import { getModelConfig } from "@/lib/ai/models";
+import { getModelConfig, type Effort } from "@/lib/ai/models";
 import { isAiActiveForUser } from "@/lib/ai/consent";
 import { hasBudgetRemaining, recordAiUsage } from "@/lib/ai/usage";
 import { consumeRateLimit, type RateLimitRule } from "@/lib/ai/rate-limit";
@@ -41,6 +41,8 @@ import {
 export const BATCH_SIZE = 80;
 /** Batches per run: bounds one click's cost (and the model's work) per user. */
 export const MAX_BATCHES = 3;
+/** Haiku's own default. Drop to low only if scripts/eval-categorize.ts holds accuracy. */
+export const CATEGORIZE_EFFORT: Effort = "medium";
 /** "Suggest categories" clicks: 5 per hour per user. */
 export const CATEGORIZE_RATE_LIMIT: RateLimitRule = { limit: 5, windowMs: 60 * 60_000 };
 
@@ -157,6 +159,8 @@ export async function categorizeBatch(input: {
   model: LanguageModel;
   /** Usage sink; defaults to the user's ai_usage row (the eval script passes its own). */
   recordUsage?: (usage: LanguageModelUsage) => Promise<void>;
+  /** Defaults to CATEGORIZE_EFFORT; the eval script compares levels. */
+  effort?: Effort;
 }): Promise<Array<string>> {
   const record =
     input.recordUsage ??
@@ -168,6 +172,7 @@ export async function categorizeBatch(input: {
       instructions: CATEGORIZE_INSTRUCTIONS,
       prompt: batchPrompt(input.fields),
       output: Output.array({ element: CategoryAnswerSchema, maxItems: input.fields.length }),
+      reasoning: input.effort ?? CATEGORIZE_EFFORT,
       telemetry: aiTelemetry("categorize"),
       maxRetries: 1,
       timeout: 60_000,

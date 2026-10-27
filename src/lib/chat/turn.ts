@@ -261,6 +261,8 @@ export async function runChatTurn(input: {
           timeout: CHAT_TIMEOUT,
           maxRetries: 1,
           maxOutputTokens: 1_500,
+          // Sonnet defaults to high, and its thinking counts against maxOutputTokens.
+          reasoning: "low",
           telemetry: aiTelemetry("chat"),
           onEnd: async ({ totalUsage }) => {
             await recordAiUsage({ userId, feature: "chat", tier: "mid", usage: totalUsage });

@@ -165,6 +165,7 @@ export async function naturalLanguageSearch(input: {
       instructions: searchInstructions(todayParam),
       prompt: searchPrompt(text, [...choices.keys()]),
       output: Output.object({ schema: FilterSpecSchema }),
+      reasoning: "low", // the user is waiting, and the output is a fixed filter shape
       telemetry: aiTelemetry("search"),
       maxRetries: 1,
       timeout: 20_000,
