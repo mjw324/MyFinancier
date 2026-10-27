@@ -10,6 +10,7 @@ import {
   LogOut,
   PiggyBank,
   Settings,
+  Sparkles,
   Wallet,
 } from "lucide-react";
 import { signOut } from "@/lib/auth/client";
@@ -38,6 +39,7 @@ const navItems = [
   { title: "Accounts", url: "/accounts", icon: Landmark },
   { title: "Transactions", url: "/transactions", icon: ArrowLeftRight },
   { title: "Budgets", url: "/budgets", icon: PiggyBank },
+  { title: "Assistant", url: "/assistant", icon: Sparkles },
   { title: "Settings", url: "/settings", icon: Settings },
 ];
 
