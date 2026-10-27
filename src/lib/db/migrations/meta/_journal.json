@@ -92,6 +92,13 @@
       "when": 1793069194321,
       "tag": "0012_ai_chat",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1793103668798,
+      "tag": "0013_user_memories",
+      "breakpoints": true
     }
   ]
 }

@@ -100,3 +100,30 @@ export const aiMessage = pgTable(
 
 export type AiChat = typeof aiChat.$inferSelect;
 export type AiMessageRow = typeof aiMessage.$inferSelect;
+
+/**
+ * Notes the assistant keeps about a user ("I'm saving for a car", "rent is
+ * split with a roommate"). Written only by the user: by hand in Settings or
+ * by confirming a chat proposal (lib/chat/proposals.ts). Read into the chat
+ * snapshot after the cache breakpoint, cleaned and capped (lib/chat/memories.ts).
+ * Cascades with the user.
+ */
+export const userMemories = pgTable(
+  "user_memories",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    content: text("content").notNull(),
+    // "manual" (typed in Settings) | "chat" (a confirmed chat proposal)
+    source: text("source").notNull().default("manual"),
+    createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => [index("user_memories_user_created_idx").on(table.userId, table.createdAt)],
+).enableRLS();
+
+export type UserMemory = typeof userMemories.$inferSelect;
