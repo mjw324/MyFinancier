@@ -140,6 +140,11 @@ AI conventions: callers request a tier via `getModel(tier)`, pass
 `hasBudgetRemaining` before and `recordAiUsage` after each call. Model calls
 never receive access tokens, account numbers, or user names/emails, and the
 model never does arithmetic — code computes every figure.
+AI runs for a user only when `isAiActiveForUser` (opt-in in `lib/ai/consent.ts`
+AND `AI_ENABLED`). Insights: detectors in `src/lib/insights/detectors.ts`
+compute candidates (no model); the weekly digest (`insights/digest.ts`,
+`insights/jobs.ts`) has the model write `{{fact}}` placeholders that are
+filled from the candidate payload, and rejects model text that types a figure.
 
 ### Deployment (Railway)
 - Use standalone Next.js output mode with a multi-stage Dockerfile.
