@@ -181,6 +181,21 @@ Chat assistant (`src/lib/chat/`, `/assistant`, `POST /api/chat`):
   charts from `part.output` only; markdown with no HTML and no images.
 - Evals: `tests/integration/chat-*.test.ts` with the `ai/test` mock model.
 
+Memories and proposals (Phase 4):
+- `user_memories` (`lib/chat/memories.ts`): user-written notes, 20 per user,
+  200 chars, no links; edited in Settings (`settings/memory-actions.ts`). The
+  snapshot copy is cleaned and capped and goes after the cache breakpoint,
+  labelled as the person's words, not instructions.
+- Proposals (`lib/chat/proposals.ts`): `proposeRecategorize`, `proposeBudget`,
+  `proposeMemory` use AI SDK `toolApproval` (`buildToolApproval` in
+  `tools.ts`). `checkProposal` auto-denies another user's ids, unknown
+  categories and instruction-like memories; the rest wait for the user's
+  card. Apply is `assistant/proposal-actions.ts`: it reads the proposal from
+  the stored transcript (never the client), re-checks it and applies it via
+  the app's own actions. The tools' `execute` only reads back the outcome, so
+  the model never writes. Nothing moves money or touches Plaid. `/api/chat`
+  takes `{ id, approvals: [{ id, approved }] }` to continue a message.
+
 ### Deployment (Railway)
 - Use standalone Next.js output mode with a multi-stage Dockerfile.
 - Set all env vars in Railway dashboard.
