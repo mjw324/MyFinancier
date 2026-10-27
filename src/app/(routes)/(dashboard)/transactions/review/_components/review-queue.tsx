@@ -61,18 +61,19 @@ export function SuggestButton() {
  * Accept; transaction text is rendered as plain text.
  */
 export function ReviewQueue({ items }: { items: QueueItem[] }) {
-  const [visible, setVisible] = useState(items);
-  const [choice, setChoice] = useState<Record<string, PlaidPrimary | "">>(
-    Object.fromEntries(items.map((i) => [i.id, (i.suggested as PlaidPrimary | null) ?? ""])),
-  );
+  // Derived from the server's items (not copied into state), so new
+  // suggestions show up as soon as the page revalidates.
+  const [decided, setDecided] = useState<ReadonlySet<string>>(new Set());
+  const [choice, setChoice] = useState<Record<string, PlaidPrimary | "">>({});
   const [remember, setRemember] = useState<Record<string, boolean>>({});
   const [pending, startTransition] = useTransition();
+  const visible = items.filter((i) => !decided.has(i.id));
+  const chosen = (item: QueueItem) => choice[item.id] ?? ((item.suggested as PlaidPrimary | null) || "");
 
   const decide = (item: QueueItem, accept: boolean) => {
-    const category = choice[item.id];
+    const category = chosen(item);
     if (accept && !category) return void toast.error("Pick a category first.");
-    const before = visible;
-    setVisible((v) => v.filter((i) => i.id !== item.id));
+    setDecided((d) => new Set(d).add(item.id));
     startTransition(async () => {
       const res = accept
         ? await acceptCategorySuggestionAction({
@@ -82,7 +83,11 @@ export function ReviewQueue({ items }: { items: QueueItem[] }) {
           })
         : await rejectCategorySuggestionAction({ suggestionId: item.id });
       if (!res.success) {
-        setVisible(before);
+        setDecided((d) => {
+          const next = new Set(d);
+          next.delete(item.id);
+          return next;
+        });
         toast.error(res.error);
       }
     });
@@ -99,13 +104,14 @@ export function ReviewQueue({ items }: { items: QueueItem[] }) {
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium">{item.label}</p>
             <p className="text-xs text-muted-foreground">
-              {formatDate(item.date)} · {formatCurrency(item.amount)}
+              {formatDate(item.date)} · {Number(item.amount) > 0 ? "-" : "+"}
+              {formatCurrency(Math.abs(Number(item.amount)))}
               {item.plaidCategory ? ` · Bank says ${formatCategory(item.plaidCategory)}` : ""}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Select
-              value={choice[item.id] || undefined}
+              value={chosen(item) || undefined}
               onValueChange={(v) => setChoice((c) => ({ ...c, [item.id]: v as PlaidPrimary }))}
             >
               <SelectTrigger className="w-48" aria-label="Category">

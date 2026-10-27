@@ -119,6 +119,18 @@ describe("suggestCategories", () => {
     expect(prompts).toHaveLength(1);
   });
 
+  it("stores but neither counts nor queues answers that agree with the bank", async () => {
+    await seed();
+    const { model, prompts } = mockModel((prompt) =>
+      promptItems(prompt).map((i) => ({ ref: i.ref, category: i.merchant === "DMV" ? "GENERAL_SERVICES" : "uncertain" })),
+    );
+    expect(await suggestCategories({ userId: U, model })).toEqual({ status: "ok", suggested: 0, uncertain: 4, ruled: 1 });
+    expect((await listReviewQueue(U)).map((q) => q.transactionId)).not.toContain("tx_med");
+    // Stored, so the row isn't asked about again.
+    expect(await suggestCategories({ userId: U, model })).toMatchObject({ suggested: 0, uncertain: 0 });
+    expect(prompts).toHaveLength(1);
+  });
+
   it("stops at the monthly budget and the rate limit", async () => {
     await seed();
     const { model, prompts } = answerer();

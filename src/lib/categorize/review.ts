@@ -4,7 +4,7 @@
  * optionally saves a rule for the merchant, and recomputes flows.
  */
 
-import { and, count, desc, eq, isNull, or } from "drizzle-orm";
+import { and, count, desc, eq, isNull, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { transactions } from "@/lib/db/schema/transactions";
 import { categorySuggestions } from "@/lib/db/schema/categorize";
@@ -15,6 +15,9 @@ import {
   ruleKeyForTransaction,
   upsertCategoryRule,
 } from "./rules";
+
+/** Suggestions that agree with the bank's own category leave nothing to decide. */
+const differsFromBank = sql`${categorySuggestions.suggested} IS DISTINCT FROM ${transactions.category}`;
 
 export interface ReviewItem {
   id: string;
@@ -53,6 +56,7 @@ export async function listReviewQueue(userId: string, limit = 100): Promise<Revi
         eq(transactions.userId, userId),
         eq(categorySuggestions.status, "pending"),
         isNull(transactions.customCategory),
+        differsFromBank,
       ),
     )
     .orderBy(desc(transactions.date), desc(categorySuggestions.id))
@@ -150,6 +154,7 @@ export async function countPendingSuggestions(userId: string): Promise<number> {
         eq(categorySuggestions.userId, userId),
         eq(categorySuggestions.status, "pending"),
         isNull(transactions.customCategory),
+        differsFromBank,
       ),
     );
   return row?.n ?? 0;

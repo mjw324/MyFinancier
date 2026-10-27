@@ -183,7 +183,7 @@ describe("approve", () => {
     expect(rows[0]).toMatchObject({ categoryKey: "FOOD_AND_DRINK", amount: "300.00", period: "monthly", startDate: today, endDate: null });
 
     const chunks = await turn(() => ({ text: "Budget created." }), decide([{ id: part.approval!.id, approved: true }])).run;
-    expect(chunks.find((c) => c.type === "tool-output-available")?.output).toMatchObject({ status: "applied", amount: { display: "$300.00" } });
+    expect(chunks.find((c) => c.type === "tool-output-available")?.output).toMatchObject({ status: "applied", amount: { display: "$300.00" }, inSnapshot: true });
   });
 
   it("saves a memory as source 'chat'", async () => {

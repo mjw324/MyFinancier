@@ -236,7 +236,13 @@ export async function suggestCategories(input: {
     if (rows.length > 0) {
       await db.insert(categorySuggestions).values(rows).onConflictDoNothing();
     }
-    for (const r of rows) r.suggested ? suggested++ : uncertain++;
+    // A suggestion that agrees with the bank is stored (so the row isn't asked
+    // about again) but leaves nothing to review.
+    batch.forEach((g, i) => {
+      const known = isPlaidPrimary(answers[i]) ? answers[i] : null;
+      if (!known) uncertain += g.ids.length;
+      else if (known !== g.fields.bankGuess) suggested += g.ids.length;
+    });
   }
   return { status: "ok", suggested, uncertain, ruled: ruled.length };
 }

@@ -13,7 +13,8 @@
     "db:studio": "drizzle-kit studio",
     "test": "vitest",
     "test:run": "vitest run",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@ai-sdk/amazon-bedrock": "^5.0.124",
@@ -52,6 +53,7 @@
     "react-hook-form": "^7.86.0",
     "react-plaid-link": "^5.0.0",
     "recharts": "3.10.1",
+    "remark-gfm": "4.0.1",
     "sonner": "^2.0.8",
     "tailwind-merge": "^3.6.0",
     "tailwindcss-animate": "^1.0.7",
@@ -59,6 +61,7 @@
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.6",
+    "@playwright/test": "^1.64.1",
     "@tailwindcss/postcss": "^4.3.3",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.2",

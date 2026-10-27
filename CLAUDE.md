@@ -158,7 +158,8 @@ One-click AI:
   sends rows with LOW/UNKNOWN/MEDIUM confidence or no merchant to the small
   tier (enum of Plaid primaries plus "uncertain"; P2P rows as a fixed phrase;
   digits masked) and stores `category_suggestions`; nothing applies until the
-  user accepts in `/transactions/review`.
+  user accepts in `/transactions/review`, which lists only suggestions that
+  differ from the bank's category (or are uncertain).
 - "Explain this" (`src/lib/explain/`): slices are rebuilt server-side from the
   dashboard loaders and narrated with the digest's `fillPlaceholders`.
 - Search (`src/lib/transactions/nl-search.ts`): text → strict zod filter spec →

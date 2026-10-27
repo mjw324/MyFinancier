@@ -26,6 +26,7 @@ import {
 } from "@assistant-ui/react";
 import { useAISDKRuntime } from "@assistant-ui/react-ai-sdk";
 import { MarkdownTextPrimitive } from "@assistant-ui/react-markdown";
+import remarkGfm from "remark-gfm";
 import { AlertTriangle, ArrowUp, Sparkles, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { ChatUIMessage, GuardData } from "@/lib/chat/types";
@@ -52,7 +53,9 @@ function MarkdownText() {
   if (guard?.scope === "withheld") return null;
   return (
     <MarkdownTextPrimitive
-      className="flex flex-col gap-2 leading-relaxed [&_h1]:font-semibold [&_h2]:font-semibold [&_h3]:font-semibold [&_ol]:list-decimal [&_ol]:pl-5 [&_strong]:font-semibold [&_table]:text-xs [&_td]:border-t [&_td]:px-2 [&_td]:py-1 [&_th]:px-2 [&_th]:text-left [&_ul]:list-disc [&_ul]:pl-5"
+      className="flex flex-col gap-2 leading-relaxed [&_h1]:font-semibold [&_h2]:font-semibold [&_h3]:font-semibold [&_ol]:list-decimal [&_ol]:pl-5 [&_strong]:font-semibold [&_table]:block [&_table]:max-w-full [&_table]:overflow-x-auto [&_table]:text-xs [&_td]:border-t [&_td]:px-2 [&_td]:py-1 [&_th]:px-2 [&_th]:text-left [&_ul]:list-disc [&_ul]:pl-5"
+      // Tables are GFM, not CommonMark; the prompt allows simple tables.
+      remarkPlugins={[remarkGfm]}
       skipHtml
       disallowedElements={["img", "a", "iframe", "script", "style", "video", "audio", "source", "picture"]}
       unwrapDisallowed

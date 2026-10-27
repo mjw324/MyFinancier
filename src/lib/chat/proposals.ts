@@ -211,7 +211,18 @@ export async function applyRecategorize(userId: string, input: RecategorizeInput
  * What the tool reports after the user approved: whether the change is in
  * place. Read-only; the write happened (or didn't) in the Server Action.
  */
+/**
+ * Read back after an approval. The continuation's snapshot is rebuilt after
+ * the change was applied, so an applied result says so (CHAT_INSTRUCTIONS
+ * explains the flag): otherwise the model reads the new budget or note in
+ * the snapshot as an older duplicate.
+ */
 export async function proposalOutcome(userId: string, kind: ProposalToolName, rawInput: unknown) {
+  const outcome = await readOutcome(userId, kind, rawInput);
+  return outcome.status === "applied" ? { ...outcome, inSnapshot: true } : outcome;
+}
+
+async function readOutcome(userId: string, kind: ProposalToolName, rawInput: unknown) {
   switch (kind) {
     case "proposeRecategorize": {
       const input = RecategorizeInputSchema.parse(rawInput);
