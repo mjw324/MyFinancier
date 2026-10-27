@@ -87,10 +87,12 @@ export function toItemFields(row: Omit<CandidateRow, "id">): Omit<CategorizeItem
   if (isPersonToPerson({ description: row.name, merchantName: row.merchantName, pfcPrimary: row.category })) {
     return { description: P2P_DESCRIPTOR, direction, bankGuess };
   }
-  const merchant = cleanLabel(row.merchantName) || undefined;
-  // Digit runs (store numbers, dates, reference codes) say nothing about the
-  // category; masking them groups a merchant's rows and keeps numbers out.
-  const description = cleanLabel(row.name, 64).replace(/\d+/g, "#");
+  // Digit runs (store numbers, dates, reference codes, a card number in a
+  // hostile descriptor) say nothing about the category; masking them groups
+  // a merchant's rows and keeps numbers out of the prompt.
+  const mask = (s: string) => s.replace(/\d+/g, "#");
+  const merchant = mask(cleanLabel(row.merchantName)) || undefined;
+  const description = mask(cleanLabel(row.name, 64));
   return { merchant, description, direction, bankGuess };
 }
 
