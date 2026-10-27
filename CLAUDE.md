@@ -145,6 +145,21 @@ AND `AI_ENABLED`). Insights: detectors in `src/lib/insights/detectors.ts`
 compute candidates (no model); the weekly digest (`insights/digest.ts`,
 `insights/jobs.ts`) has the model write `{{fact}}` placeholders that are
 filled from the candidate payload, and rejects model text that types a figure.
+One-click AI:
+- Categories (`src/lib/categorize/`): `category_rules` (merchant /
+  name-signature keyed, like `spending_rules`) run after every sync and
+  before any model call; `custom_category_source` is manual | rule |
+  suggestion, and rules never overwrite manual or suggestion. `suggest.ts`
+  sends rows with LOW/UNKNOWN/MEDIUM confidence or no merchant to the small
+  tier (enum of Plaid primaries plus "uncertain"; P2P rows as a fixed phrase;
+  digits masked) and stores `category_suggestions`; nothing applies until the
+  user accepts in `/transactions/review`.
+- "Explain this" (`src/lib/explain/`): slices are rebuilt server-side from the
+  dashboard loaders and narrated with the digest's `fillPlaceholders`.
+- Search (`src/lib/transactions/nl-search.ts`): text → strict zod filter spec →
+  query params → `parseTransactionQuery` → `buildFilterConditions`.
+- Suites: `tests/integration/category-accuracy.test.ts` (seed-profile labels),
+  `ai-injection.test.ts`; `scripts/eval-categorize.ts` scores the real model.
 
 ### Deployment (Railway)
 - Use standalone Next.js output mode with a multi-stage Dockerfile.
