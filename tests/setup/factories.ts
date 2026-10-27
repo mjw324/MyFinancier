@@ -143,6 +143,8 @@ type TxnRow = {
   pending: boolean;
   customName?: string | null;
   customCategory?: string | null;
+  customCategorySource?: string | null;
+  pfcConfidenceLevel?: string | null;
   recurringStreamId?: string | null;
   spendingType?: string | null;
   spendingTypeSource?: string | null;
