@@ -13,6 +13,7 @@ import {
   BalanceWidget,
   BudgetWidget,
   CashFlowWidget,
+  DigestWidget,
   FixedVariableWidget,
   InsightsWidget,
   PaceWidget,
@@ -55,6 +56,10 @@ export default async function OverviewPage({
         <h2 className="text-lg font-semibold">Overview</h2>
         <PeriodSelect value={ctx.key} />
       </div>
+
+      <Suspense fallback={null}>
+        <DigestWidget ctx={ctx} />
+      </Suspense>
 
       <div className="grid gap-6 xl:grid-cols-3">
         <div className="min-w-0 xl:col-span-2">

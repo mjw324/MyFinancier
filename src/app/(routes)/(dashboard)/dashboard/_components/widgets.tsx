@@ -28,6 +28,9 @@ import { SpendingPace } from "@/components/features/overview/spending-pace";
 import { RecentTransactions } from "@/components/features/overview/recent-transactions";
 import { BudgetOverview } from "@/components/features/overview/budget-overview";
 import { WidgetError } from "@/components/features/overview/widget-states";
+import { DigestCard } from "@/components/features/insights/digest-card";
+import { isAiActiveForUser } from "@/lib/ai/consent";
+import { getLatestDigest } from "@/lib/insights/candidates";
 import { SpendingOverTime } from "@/components/charts/spending-over-time";
 import {
   loadBalances,
@@ -225,4 +228,26 @@ export async function BudgetWidget({ ctx }: Props) {
   const res = await settle("budgets", ctx.userId, () => getBudgetProgress(ctx.userId));
   if (!res.ok) return <WidgetError title="Budget progress" />;
   return <BudgetOverview budgets={res.value} />;
+}
+
+/** The weekly AI digest; renders nothing unless the user opted in and AI is on. */
+export async function DigestWidget({ ctx }: Props) {
+  const res = await settle("digest", ctx.userId, async () =>
+    (await isAiActiveForUser(ctx.userId)) ? getLatestDigest(ctx.userId) : [],
+  );
+  if (!res.ok || res.value.length === 0) return null;
+  const items = res.value;
+  const weekOf = items[0].digestAt!.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+  return (
+    <DigestCard
+      weekOf={`Week of ${weekOf}`}
+      items={items.map((i) => ({
+        id: i.id,
+        title: i.title ?? "",
+        body: i.body ?? "",
+        href: i.payload.href,
+        helpful: i.helpful,
+      }))}
+    />
+  );
 }
