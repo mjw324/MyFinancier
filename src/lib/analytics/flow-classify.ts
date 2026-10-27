@@ -134,8 +134,10 @@ const PLAID_PRIMARIES = new Set([
 
 /** INCOME detailed categories that mean earned income even inside a payment app. */
 const EARNED_INCOME_DETAILED = new Set([
-  "INCOME_WAGES",
+  "INCOME_WAGES", // v1; split into the three below in v2
   "INCOME_SALARY",
+  "INCOME_CONTRACTOR",
+  "INCOME_GIG_ECONOMY",
   "INCOME_DIVIDENDS",
   "INCOME_INTEREST_EARNED",
   "INCOME_RETIREMENT_PENSION",

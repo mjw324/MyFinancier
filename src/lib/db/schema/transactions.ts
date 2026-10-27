@@ -31,6 +31,8 @@ export const transactions = pgTable(
     merchantName: text("merchant_name"),
     category: text("category"),
     categoryId: text("category_id"),
+    // Plaid's PFC confidence: VERY_HIGH | HIGH | MEDIUM | LOW | UNKNOWN.
+    pfcConfidenceLevel: text("pfc_confidence_level"),
     customName: text("custom_name"),
     customCategory: text("custom_category"),
     pending: boolean("pending").default(false),

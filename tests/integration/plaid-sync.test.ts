@@ -85,6 +85,26 @@ describe("syncTransactions — accounts across pages (verify-plaid N3, N13)", ()
     expect((await item()).cursor).toBe("c2");
   });
 
+  it("requests PFC v2 and stores the category confidence level", async () => {
+    plaid.transactionsSync.mockImplementation(
+      pagedSync({
+        "": {
+          accounts: [plaidAccount("pa_one")],
+          added: [plaidTxn("t1", "pa_one")],
+          next_cursor: "c1",
+          has_more: false,
+        },
+      }),
+    );
+
+    await syncTransactions(ITEM);
+
+    expect(plaid.transactionsSync.mock.calls[0][0].options).toMatchObject({
+      personal_finance_category_version: "v2",
+    });
+    expect((await txnByPlaidId("t1")).pfcConfidenceLevel).toBe("HIGH");
+  });
+
   it("upserts an account already inserted by a concurrent path instead of failing, and never reassigns another item's account", async () => {
     const db = getTestDb();
     await db.insert(financialAccounts).values([

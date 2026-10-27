@@ -1,5 +1,9 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
-import type { AccountBase, Transaction as PlaidTransaction } from "plaid";
+import {
+  PersonalFinanceCategoryVersion,
+  type AccountBase,
+  type Transaction as PlaidTransaction,
+} from "plaid";
 import { db, type DbExecutor } from "@/lib/db";
 import { plaidItems } from "@/lib/db/schema/plaid";
 import { financialAccounts } from "@/lib/db/schema/accounts";
@@ -185,7 +189,12 @@ async function fetchPagesOnce(
         access_token: accessToken,
         cursor,
         count: PAGE_SIZE,
-        options: { include_personal_finance_category: true },
+        options: {
+          include_personal_finance_category: true,
+          // Teams enabled before Dec 2025 default to v1; v2 is a superset
+          // with better accuracy. flow-classify.ts accepts both namings.
+          personal_finance_category_version: PersonalFinanceCategoryVersion.V2,
+        },
       }),
     );
     added.push(...data.added);
@@ -339,6 +348,7 @@ async function applySyncUpdate(
             merchantName: sql`excluded.merchant_name`,
             category: sql`excluded.category`,
             categoryId: sql`excluded.category_id`,
+            pfcConfidenceLevel: sql`excluded.pfc_confidence_level`,
             pending: sql`excluded.pending`,
             normalizedMerchant: sql`excluded.normalized_merchant`,
             nameSignature: sql`excluded.name_signature`,
@@ -467,6 +477,7 @@ function mapPlaidTransaction(
     merchantName: txn.merchant_name ?? null,
     category: txn.personal_finance_category?.primary ?? null,
     categoryId: txn.personal_finance_category?.detailed ?? null,
+    pfcConfidenceLevel: txn.personal_finance_category?.confidence_level ?? null,
     pending: txn.pending,
     normalizedMerchant: normalizeMerchant(matchSource),
     nameSignature: computeNameSignature(matchSource),

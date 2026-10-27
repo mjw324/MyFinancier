@@ -1,5 +1,5 @@
 import { and, eq, notInArray, sql } from "drizzle-orm";
-import type { TransactionStream } from "plaid";
+import { PersonalFinanceCategoryVersion, type TransactionStream } from "plaid";
 import { db, type DbExecutor } from "@/lib/db";
 import { plaidItems } from "@/lib/db/schema/plaid";
 import { financialAccounts } from "@/lib/db/schema/accounts";
@@ -54,6 +54,9 @@ export async function fetchRecurringTransactions(
   const response = await withTransientRetry(() =>
     plaidClient.transactionsRecurringGet({
       access_token: decrypt(item.accessToken),
+      options: {
+        personal_finance_category_version: PersonalFinanceCategoryVersion.V2,
+      },
     }),
   );
   const { inflow_streams, outflow_streams, updated_datetime } = response.data;

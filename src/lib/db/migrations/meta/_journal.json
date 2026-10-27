@@ -57,6 +57,13 @@
       "when": 1792078171869,
       "tag": "0007_audit_remediation",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793066555386,
+      "tag": "0008_pfc_confidence",
+      "breakpoints": true
     }
   ]
 }
