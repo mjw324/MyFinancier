@@ -97,6 +97,9 @@ const date = (d: Date): Fact => ({
   display: d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" }),
 });
 
+/** Fact builders, shared with other narrated features (explain/slices.ts). */
+export const fact = { money, percent, count, text, date };
+
 const addDays = (d: Date, n: number) => new Date(d.getTime() + n * DAY_MS);
 const startOfNextMonth = (d: Date) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1));
 

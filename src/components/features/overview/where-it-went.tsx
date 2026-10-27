@@ -3,6 +3,7 @@ import {
   Card,
   CardContent,
   CardDescription,
+  CardAction,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -21,6 +22,8 @@ interface WhereItWentProps {
   merchants: CounterpartyTotal[];
   range: { from: string; to: string };
   title: string;
+  /** Optional "Explain" control (AI), shown in the header. */
+  explain?: React.ReactNode;
 }
 
 const VISIBLE = 8;
@@ -31,7 +34,7 @@ const VISIBLE = 8;
  * from people, rewards) are listed separately and never drawn: a bar cannot
  * honestly show a negative share of spending.
  */
-export function WhereItWent({ buckets, merchants, range, title }: WhereItWentProps) {
+export function WhereItWent({ buckets, merchants, range, title, explain }: WhereItWentProps) {
   const empty = buckets.buckets.length === 0 && buckets.negative.length === 0;
   const top = buckets.buckets.slice(0, VISIBLE);
   const rest = buckets.buckets.slice(VISIBLE);
@@ -44,6 +47,7 @@ export function WhereItWent({ buckets, merchants, range, title }: WhereItWentPro
         <CardDescription>
           {title} · {formatCurrency(buckets.netSpending)} net spending
         </CardDescription>
+        {explain && <CardAction>{explain}</CardAction>}
       </CardHeader>
       <CardContent>
         {empty ? (

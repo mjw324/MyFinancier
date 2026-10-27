@@ -32,7 +32,10 @@ import { DigestCard } from "@/components/features/insights/digest-card";
 import { isAiActiveForUser } from "@/lib/ai/consent";
 import { getLatestDigest } from "@/lib/insights/candidates";
 import { SpendingOverTime } from "@/components/charts/spending-over-time";
+import { ExplainButton } from "@/components/features/insights/explain-button";
+import { CardAction } from "@/components/ui/card";
 import {
+  loadAiActive,
   loadBalances,
   loadBuckets,
   loadCashFlow,
@@ -65,16 +68,18 @@ function bounds(ctx: DashboardContext) {
 export async function CashFlowWidget({ ctx }: Props) {
   const b = bounds(ctx);
   const res = await settle("cash-flow", ctx.userId, async () => {
-    const [flow, previous] = await Promise.all([
+    const [flow, previous, ai] = await Promise.all([
       loadCashFlow(ctx.userId, b.start, b.end),
       loadPrevious(ctx.userId, ctx.key, ctx.today),
+      loadAiActive(ctx.userId),
     ]);
-    return { flow, previous };
+    return { flow, previous, ai };
   });
   if (!res.ok) return <WidgetError title="Cash flow" />;
-  const { flow, previous } = res.value;
+  const { flow, previous, ai } = res.value;
   return (
     <CashFlowCard
+      explain={ai ? <ExplainButton chart="cash_flow" period={ctx.key} /> : undefined}
       flow={flow}
       title={b.title}
       range={b.range}
@@ -98,14 +103,24 @@ export async function BalanceWidget({ ctx }: Props) {
 export async function WhereItWentWidget({ ctx }: Props) {
   const b = bounds(ctx);
   const res = await settle("where-it-went", ctx.userId, async () => {
-    const [buckets, merchants] = await Promise.all([
+    const [buckets, merchants, ai] = await Promise.all([
       loadBuckets(ctx.userId, b.start, b.end),
       loadMerchants(ctx.userId, b.start, b.end),
+      loadAiActive(ctx.userId),
     ]);
-    return { buckets, merchants };
+    return { buckets, merchants, ai };
   });
   if (!res.ok) return <WidgetError title="Where it went" />;
-  return <WhereItWent {...res.value} range={b.range} title={b.title} />;
+  const { buckets, merchants, ai } = res.value;
+  return (
+    <WhereItWent
+      buckets={buckets}
+      merchants={merchants}
+      range={b.range}
+      title={b.title}
+      explain={ai ? <ExplainButton chart="where_it_went" period={ctx.key} /> : undefined}
+    />
+  );
 }
 
 export async function FixedVariableWidget({ ctx }: Props) {
@@ -201,18 +216,27 @@ export async function InsightsWidget({ ctx }: Props) {
 
 export async function SpendingOverTimeWidget({ ctx }: Props) {
   const b = bounds(ctx);
-  const res = await settle("spending-over-time", ctx.userId, () =>
-    loadDaily(ctx.userId, b.start, b.end, toDateParam(utcAddDays(b.today, 1))),
-  );
+  const res = await settle("spending-over-time", ctx.userId, async () => {
+    const [days, ai] = await Promise.all([
+      loadDaily(ctx.userId, b.start, b.end, toDateParam(utcAddDays(b.today, 1))),
+      loadAiActive(ctx.userId),
+    ]);
+    return { days, ai };
+  });
   if (!res.ok) return <WidgetError title="Daily spending" />;
   return (
     <Card className="gap-4">
       <CardHeader>
         <CardTitle className="text-base">Daily spending</CardTitle>
         <CardDescription>{b.title} · net of refunds</CardDescription>
+        {res.value.ai && (
+          <CardAction>
+            <ExplainButton chart="daily_spending" period={ctx.key} />
+          </CardAction>
+        )}
       </CardHeader>
       <CardContent>
-        <SpendingOverTime data={res.value} />
+        <SpendingOverTime data={res.value.days} />
       </CardContent>
     </Card>
   );

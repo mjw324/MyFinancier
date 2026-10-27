@@ -33,6 +33,8 @@ interface CashFlowCardProps {
   range: { from: string; to: string };
   /** Complete periods only; null hides the comparison. */
   previous: { label: string; flow: CashFlow } | null;
+  /** Optional "Explain" control (AI), shown in the header. */
+  explain?: React.ReactNode;
 }
 
 function signed(n: number): string {
@@ -51,7 +53,7 @@ function deltaText(current: number, previous: number): string {
  * The headline: money in, spending, saved/moved, and the net change — with the
  * identity written out so the four numbers can be checked against each other.
  */
-export function CashFlowCard({ flow, title, range, previous }: CashFlowCardProps) {
+export function CashFlowCard({ flow, title, range, previous, explain }: CashFlowCardProps) {
   const rate = savingsRate(flow);
   const prevRate = previous ? savingsRate(previous.flow) : null;
   const vs = previous ? `vs ${previous.label}` : null;
@@ -112,7 +114,8 @@ export function CashFlowCard({ flow, title, range, previous }: CashFlowCardProps
       <CardHeader>
         <CardTitle className="text-base">Cash flow</CardTitle>
         <CardDescription>{title}</CardDescription>
-        <CardAction>
+        <CardAction className="flex items-center gap-1">
+          {explain}
           <Link
             href={transactionsHref(range)}
             className="flex items-center text-sm text-muted-foreground hover:text-foreground"

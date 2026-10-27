@@ -11,6 +11,7 @@
  */
 
 import { cache } from "react";
+import { isAiActiveForUser } from "@/lib/ai/consent";
 import {
   getCashFlow,
   getDailySpending,
@@ -141,6 +142,9 @@ export const loadMonthlyHistory = cache((userId: string, today: string) => {
 export const loadPrevious = cache((userId: string, key: DashboardPeriodKey, today: string) =>
   getPreviousCashFlow(userId, resolveDashboardPeriod(key, parseDateParam(today)!)),
 );
+
+/** AI on for this viewer (opt-in AND AI_ENABLED), once per request. */
+export const loadAiActive = cache((userId: string) => isAiActiveForUser(userId));
 
 export const loadBalances = cache((userId: string) => getBalanceSummary(userId));
 
