@@ -71,6 +71,13 @@
       "when": 1793066715028,
       "tag": "0009_ai_usage",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793067119027,
+      "tag": "0010_insight_candidates",
+      "breakpoints": true
     }
   ]
 }
