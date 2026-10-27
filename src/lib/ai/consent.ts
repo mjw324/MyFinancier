@@ -8,10 +8,10 @@ import { isAiEnabled } from "./models";
  * changes in substance; the version a user agreed to is stored with the
  * time they agreed.
  */
-export const AI_CONSENT_VERSION = "2026-10-26";
+export const AI_CONSENT_VERSION = "2026-10-27";
 
 export const AI_CONSENT_TEXT =
-  "MyFinancier sends summaries it computed from your transactions (totals, dates, category and merchant names) to our AI provider to write your weekly digest. It never sends account numbers, bank credentials, your name or your email, and names of people you pay are replaced. Every figure is calculated by MyFinancier, not by the AI. You can turn this off at any time.";
+  "MyFinancier sends our AI provider summaries it computed from your transactions (totals, dates, category and merchant names) to write your weekly digest and explain your charts, cleaned transaction descriptions to suggest categories, and the searches you type to find transactions. It never sends account numbers, bank credentials, your name or your email, and names of people you pay are replaced. Every figure is calculated by MyFinancier, not by the AI, and no category changes until you accept it. You can turn this off at any time.";
 
 export interface AiConsent {
   optedIn: boolean;

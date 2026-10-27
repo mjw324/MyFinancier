@@ -1,4 +1,5 @@
 import { type Metadata } from "next";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getServerSession } from "@/lib/auth/get-session";
 import {
@@ -25,6 +26,9 @@ import { TransactionsTable } from "@/components/features/transactions/transactio
 import { TransactionTotals } from "@/components/features/transactions/transaction-totals";
 import { Pagination } from "@/components/features/transactions/pagination";
 import { ExportButton } from "@/components/features/transactions/export-button";
+import { Button } from "@/components/ui/button";
+import { isAiActiveForUser } from "@/lib/ai/consent";
+import { countPendingSuggestions } from "@/lib/categorize/review";
 
 export const metadata: Metadata = {
   title: "MyFinancier — Transactions",
@@ -67,14 +71,16 @@ export default async function TransactionsPage({
   const offset = (currentPage - 1) * PAGE_SIZE;
   const filtersActive = hasActiveFilters(filters);
 
-  const [transactions, totalCount, accounts, categoryNames, totals] =
+  const [transactions, totalCount, accounts, categoryNames, totals, aiActive] =
     await Promise.all([
       searchTransactions(userId, filters, { limit: PAGE_SIZE, offset }),
       getTransactionCount(userId, filters),
       getAccountsByUserId(userId),
       getDistinctCategories(userId),
       filtersActive ? getTransactionTotals(userId, filters) : null,
+      isAiActiveForUser(userId),
     ]);
+  const pendingReview = aiActive ? await countPendingSuggestions(userId) : 0;
 
   const totalPages = Math.ceil(totalCount / PAGE_SIZE);
 
@@ -90,7 +96,16 @@ export default async function TransactionsPage({
             {totalCount} transaction{totalCount !== 1 ? "s" : ""}
           </p>
         </div>
-        <ExportButton count={totalCount} />
+        <div className="flex items-center gap-2">
+          {aiActive && (
+            <Button asChild variant="outline" size="sm">
+              <Link href="/transactions/review">
+                Review categories{pendingReview > 0 ? ` (${pendingReview})` : ""}
+              </Link>
+            </Button>
+          )}
+          <ExportButton count={totalCount} />
+        </div>
       </div>
 
       <TransactionFiltersUI

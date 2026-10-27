@@ -9,6 +9,8 @@ import { ResetCustomizationsDialog } from "@/components/features/settings/reset-
 import { SpendingRulesSection } from "@/components/features/settings/spending-rules-section";
 import { DisplayPreferencesCard } from "@/components/features/settings/display-preferences-card";
 import { listSpendingRules } from "@/lib/db/queries/spending-rules";
+import { CategoryRulesSection } from "@/components/features/settings/category-rules-section";
+import { listCategoryRules } from "@/lib/categorize/rules";
 import { getUserPreferences } from "@/lib/db/queries/user-preferences";
 import { getUserTimeZone } from "@/lib/utils/user-time";
 import { AiInsightsSwitch } from "@/components/features/settings/ai-insights-switch";
@@ -22,9 +24,10 @@ export const metadata: Metadata = {
 export default async function SettingsPage() {
   const session = await getServerSession();
   const user = session!.user;
-  const [plaidItems, spendingRules, prefs, timeZone, aiConsent] = await Promise.all([
+  const [plaidItems, spendingRules, categoryRules, prefs, timeZone, aiConsent] = await Promise.all([
     getPlaidItemsByUserId(user.id),
     listSpendingRules(user.id),
+    listCategoryRules(user.id),
     getUserPreferences(user.id),
     getUserTimeZone(),
     getAiConsent(user.id),
@@ -107,6 +110,15 @@ export default async function SettingsPage() {
         </CardHeader>
         <CardContent>
           <SpendingRulesSection rules={spendingRules} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Category Rules</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <CategoryRulesSection rules={categoryRules} />
         </CardContent>
       </Card>
 
