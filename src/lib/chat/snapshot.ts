@@ -8,6 +8,9 @@
  * three prior months by category, budgets with pace, active recurring
  * outflows with next dates, and the category names searchTransactions takes.
  * Sized for roughly 1–3k tokens: lists are capped and the caps are reported.
+ *
+ * The user's saved memories travel separately (`memories`): they are the
+ * person's own words, not computed data, so the prompt labels them apart.
  */
 
 import { bucketLabel } from "@/lib/analytics/labels";
@@ -20,6 +23,7 @@ import { getDistinctCategories } from "@/lib/db/queries/transactions";
 import { categoryChoices } from "@/lib/transactions/nl-search";
 import { cleanLabel } from "@/lib/insights/sanitize";
 import { toDateParam } from "@/lib/utils/date-ranges";
+import { listMemories, memoriesForSnapshot } from "./memories";
 import { forModel, makeLabeler } from "./tools";
 import { money, percent } from "./values";
 
@@ -33,6 +37,8 @@ export interface ChatSnapshot {
   data: Record<string, unknown>;
   /** What the model reads: JSON of the model-facing copy. */
   text: string;
+  /** Saved memories, cleaned and capped (lib/chat/memories.ts). */
+  memories: { notes: string[]; truncated: boolean };
 }
 
 export async function buildSnapshot(userId: string, today: Date): Promise<ChatSnapshot> {
@@ -40,13 +46,14 @@ export async function buildSnapshot(userId: string, today: Date): Promise<ChatSn
   const monthStart = utcStartOfMonth(today);
   const historyStart = new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() - 3, 1));
 
-  const [accounts, history, current, budgets, streams, categories] = await Promise.all([
+  const [accounts, history, current, budgets, streams, categories, memoryRows] = await Promise.all([
     getAccountsWithBalances(userId),
     getMonthlyBucketTotals(periodScope(userId, { start: historyStart, end: monthStart })),
     getSpendingByBucket(periodScope(userId, { start: monthStart, end: utcAddDays(today, 1) })),
     getBudgetProgress(userId, today),
     listRecurringStreams(userId, { flowType: "outflow" }),
     getDistinctCategories(userId),
+    listMemories(userId),
   ]);
 
   const open = accounts.filter((a) => a.balance.state !== "closed");
@@ -113,5 +120,5 @@ export async function buildSnapshot(userId: string, today: Date): Promise<ChatSn
     categoryNames: [...categoryChoices(categories).keys()].slice(0, MAX_CATEGORY_NAMES),
   };
 
-  return { data, text: JSON.stringify(forModel(data)) };
+  return { data, text: JSON.stringify(forModel(data)), memories: memoriesForSnapshot(memoryRows) };
 }

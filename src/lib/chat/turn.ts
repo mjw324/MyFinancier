@@ -176,7 +176,7 @@ export async function runChatTurn(input: {
       try {
         const result = streamText({
           model: input.model ?? getModel("mid"),
-          instructions: chatInstructions({ today, timeZone, snapshotText: snapshot.text }),
+          instructions: chatInstructions({ today, timeZone, snapshotText: snapshot.text, memories: snapshot.memories }),
           messages: await convertToModelMessages(messages, { tools, ignoreIncompleteToolCalls: true }),
           tools,
           stopWhen: isStepCount(MAX_STEPS),
@@ -208,7 +208,7 @@ export async function runChatTurn(input: {
 
         const answer = response as ChatUIMessage | null;
         if (!answer) return;
-        const guard = guardAnswer(answer, snapshot.data);
+        const guard = guardAnswer(answer, { ...snapshot.data, memories: snapshot.memories.notes });
         writer.write({ type: "data-guard", data: guard });
         writer.write({ type: "finish" });
         await saveChatMessages(userId, chatId, [...messages, applyGuard(answer, guard)]);

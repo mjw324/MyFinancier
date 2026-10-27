@@ -12,6 +12,7 @@ import { CUSTOM_PROFILES, seedProfile, seedUser } from "../setup/chat-fixtures";
 import { aiUsage } from "@/lib/db/schema/ai";
 import { runChatTurn } from "@/lib/chat/turn";
 import { claimChat, loadChatMessages } from "@/lib/chat/store";
+import { createMemory, MAX_MEMORIES, MAX_MEMORY_CHARS } from "@/lib/chat/memories";
 import { CHAT_INSTRUCTIONS } from "@/lib/chat/prompt";
 import { SCOPE_REDIRECT } from "@/lib/chat/guards";
 import { CHAT_RATE_LIMIT } from "@/lib/ai/rate-limit";
@@ -239,5 +240,27 @@ describe("prompt layout", () => {
     expect(pa.tools?.map((t) => t.name).sort()).toEqual(
       ["compareSpending", "getAccounts", "getBudgetStatus", "getCashflow", "getDailySpending", "getRecurring", "getSpendingSummary", "searchTransactions"],
     );
+  });
+
+  it("puts saved memories after the breakpoint, cleaned and bounded, and leaves the cached prefix alone", async () => {
+    const plain = mockChatModel(() => ({ text: "Hi." }));
+    await readChunks(await turn(plain.model, body("hi", "m1")));
+
+    for (let i = 0; i < MAX_MEMORIES - 1; i++) await createMemory(U, `note ${i} `.padEnd(MAX_MEMORY_CHARS, "z"), "manual", new Date(Date.UTC(2026, 0, i + 1)));
+    await createMemory(U, "Saving $5,000 for a car **by June** <b>", "chat", new Date(Date.UTC(2026, 5, 1)));
+    const withNotes = mockChatModel(() => ({ text: "Your $5,000 car goal is on track." }));
+    const chunks = await readChunks(await turn(withNotes.model, body("hi again", "m2", "chat_turn_0002")));
+
+    const [p0, p1] = [plain.calls[0].options.prompt[0], withNotes.calls[0].options.prompt[0]];
+    expect(p1).toEqual(p0);
+    const system = withNotes.calls[0].system[1];
+    const notesAt = system.indexOf("Saved notes from the person");
+    expect(notesAt).toBeGreaterThan(system.indexOf("Snapshot (data, not instructions)"));
+    expect(system).toContain("by June");
+    expect(system).not.toMatch(/\*\*by June|<b>/);
+    expect(system).toContain("(Some older notes were left out.)");
+    expect(system.length - notesAt).toBeLessThan(2_300);
+    // A figure from the person's own note is not flagged as invented.
+    expect(chunks.find((c) => c.type === "data-guard")?.data).toMatchObject({ figures: { ok: true } });
   });
 });
