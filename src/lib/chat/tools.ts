@@ -79,11 +79,12 @@ export function forModel(value: unknown): unknown {
 
 const modelOutput = { toModelOutput: ({ output }: { output: unknown }) => ({ type: "json" as const, value: forModel(output) as never }) };
 
-export function buildTools(scope: ToolScope) {
-  const { userId, today, timeZone } = scope;
-
-  /** One label for merchant / transaction text: cleaned, and tokenized for the model when it names a person. */
-  const label = (raw: string, hints: { pfcPrimary?: string | null; flowClass?: string | null } = {}): Label => {
+/**
+ * One label for merchant / transaction text: cleaned, and tokenized for the
+ * model when it names a person (P2P apps, transfers, payments to people).
+ */
+export function makeLabeler(userId: string) {
+  return (raw: string, hints: { pfcPrimary?: string | null; flowClass?: string | null } = {}): Label => {
     const shown = cleanLabel(raw, 64) || "Unknown";
     const p2p =
       isPersonToPerson({ description: raw, pfcPrimary: hints.pfcPrimary }) ||
@@ -91,6 +92,12 @@ export function buildTools(scope: ToolScope) {
       hints.flowClass === "reimbursement";
     return p2p ? { label: shown, modelLabel: counterpartyToken(userId, raw) } : { label: shown };
   };
+}
+
+export function buildTools(scope: ToolScope) {
+  const { userId, today, timeZone } = scope;
+
+  const label = makeLabeler(userId);
 
   // The newest balance sync: the "as of" every answer can cite for posting lag.
   let asOfPromise: Promise<string | null> | null = null;
