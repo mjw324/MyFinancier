@@ -76,6 +76,8 @@ src/
   - Plaid webhooks (must be POST endpoints)
   - Plaid Link token exchange (client-side Plaid Link calls back to your server)
   - Any endpoint that external services call into
+  - `/api/chat` (documented exception): the AI assistant's `useChat` transport
+    needs an HTTP streaming endpoint. Non-streaming AI mutations stay Server Actions.
 - **Colocation**: Keep page-specific components in `_components/` subdirectories within
   route folders when they're only used by that page.
 - **No raw Plaid types in the frontend.** The `lib/plaid/` module transforms Plaid SDK
@@ -160,6 +162,24 @@ One-click AI:
   query params → `parseTransactionQuery` → `buildFilterConditions`.
 - Suites: `tests/integration/category-accuracy.test.ts` (seed-profile labels),
   `ai-injection.test.ts`; `scripts/eval-categorize.ts` scores the real model.
+
+Chat assistant (`src/lib/chat/`, `/assistant`, `POST /api/chat`):
+- `turn.ts` runs a turn: kill switch, opt-in, budget, `CHAT_RATE_LIMIT`, chat
+  ownership; history comes from `ai_chat` / `ai_message` (jsonb UIMessage
+  parts, validated on load), never from the client. 90-day retention via
+  `purgeExpiredChats` in the sweep; cascades with the user.
+- `tools.ts`: `buildTools({ userId, today, timeZone })`, read-only, userId only
+  from the closure, accountId checked; outputs follow `values.ts` (cents +
+  display, pre-computed delta/pctChange, resolved range, count/truncated/asOf);
+  `toModelOutput` tokenizes P2P names. Keep tool definitions and
+  `CHAT_INSTRUCTIONS` (`prompt.ts`) static: they are the cached prefix; date,
+  zone and `snapshot.ts` go after the breakpoint.
+- `guards.ts`: `checkFigures` (answer figures must come from that turn's tool
+  outputs or the snapshot; else a warning) and `checkScope` (securities advice
+  is redirected or withheld), streamed and saved as a `data-guard` part.
+- UI (assistant-ui; the shadcn-hosted AI Elements were not live) renders
+  charts from `part.output` only; markdown with no HTML and no images.
+- Evals: `tests/integration/chat-*.test.ts` with the `ai/test` mock model.
 
 ### Deployment (Railway)
 - Use standalone Next.js output mode with a multi-stage Dockerfile.

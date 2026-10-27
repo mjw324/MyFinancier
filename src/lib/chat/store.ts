@@ -9,7 +9,7 @@
  * instrumentation sweep), and they cascade with the user.
  */
 
-import { and, asc, eq, lt, sql } from "drizzle-orm";
+import { and, asc, eq, lt, notInArray, sql } from "drizzle-orm";
 import type { UIMessage } from "ai";
 import { db } from "@/lib/db";
 import { aiChat, aiMessage } from "@/lib/db/schema/ai";
@@ -48,7 +48,8 @@ export async function loadChatMessages(userId: string, chatId: string): Promise<
 }
 
 /**
- * Save the full message list after a turn. Upserts by (chat, message id) with
+ * Save the full message list after a turn: rows not in the list are removed,
+ * the rest upserted by (chat, message id) with
  * the list position, so a re-save of the same turn is idempotent.
  */
 export async function saveChatMessages(
@@ -65,6 +66,17 @@ export async function saveChatMessages(
       .where(and(eq(aiChat.id, chatId), eq(aiChat.userId, userId)))
       .returning({ id: aiChat.id });
     if (!chat) return;
+    // A regenerated reply replaces everything after the message it answers.
+    await tx.delete(aiMessage).where(
+      and(
+        eq(aiMessage.chatId, chatId),
+        eq(aiMessage.userId, userId),
+        notInArray(
+          aiMessage.id,
+          messages.map((m) => m.id),
+        ),
+      ),
+    );
     await tx
       .insert(aiMessage)
       .values(
