@@ -4,7 +4,10 @@
  * The AI assistant thread: assistant-ui primitives over an AI SDK useChat.
  *
  * - The transport sends only the new message; the server holds the history.
- * - Tool parts render as charts from their output (./tool-results.tsx).
+ * - Tool parts render as charts from their output (./tool-results.tsx);
+ *   proposals render as approval cards (./proposal-card.tsx). Once every
+ *   pending proposal is decided, the decisions are sent (approval ids only)
+ *   and the assistant continues the same message.
  * - Markdown is rendered without raw HTML, images or links (an injected
  *   instruction can't make the page fetch a URL or offer one to click).
  * - The server's `data-guard` part drives the unverified-figures warning and
@@ -13,7 +16,7 @@
 
 import { useEffect, useMemo } from "react";
 import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport } from "ai";
+import { DefaultChatTransport, isToolUIPart, lastAssistantMessageIsCompleteWithApprovalResponses } from "ai";
 import {
   AssistantRuntimeProvider,
   ComposerPrimitive,
@@ -27,6 +30,7 @@ import { AlertTriangle, ArrowUp, Sparkles, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { ChatUIMessage, GuardData } from "@/lib/chat/types";
 import { ToolResult } from "./tool-results";
+import { PROPOSAL_TOOL_NAMES, ProposalCard, ProposalContext, type ProposalContextValue } from "./proposal-card";
 
 const SUGGESTIONS = [
   "How much did I spend last month, and on what?",
@@ -90,7 +94,14 @@ function AssistantMessage() {
         <MessagePrimitive.Parts
           components={{
             Text: MarkdownText,
-            tools: { Fallback: ({ toolName, result }) => <ToolResult toolName={toolName} result={result} /> },
+            tools: {
+              Fallback: ({ toolName, toolCallId, result }) =>
+                PROPOSAL_TOOL_NAMES.has(toolName) ? (
+                  <ProposalCard toolName={toolName} toolCallId={toolCallId} />
+                ) : (
+                  <ToolResult toolName={toolName} result={result} />
+                ),
+            },
             data: { by_name: { guard: ({ data }) => <GuardNotice data={data as GuardData} /> } },
           }}
         />
@@ -123,12 +134,37 @@ export function AssistantChat({ chatId, initialMessages }: { chatId: string; ini
     () =>
       new DefaultChatTransport<ChatUIMessage>({
         api: "/api/chat",
-        prepareSendMessagesRequest: ({ id, messages }) => ({ body: { id, message: messages[messages.length - 1] } }),
+        prepareSendMessagesRequest: ({ id, messages }) => {
+          const last = messages[messages.length - 1];
+          if (last?.role !== "assistant") return { body: { id, message: last } };
+          // Decisions on the last message's proposals; the server holds the rest.
+          const approvals = last.parts
+            .filter(isToolUIPart)
+            .flatMap((p) =>
+              p.state === "approval-responded" && !p.approval.isAutomatic ? [{ id: p.approval.id, approved: p.approval.approved }] : [],
+            );
+          return { body: { id, approvals } };
+        },
       }),
     [],
   );
-  const chat = useChat<ChatUIMessage>({ id: chatId, messages: initialMessages, transport });
+  const chat = useChat<ChatUIMessage>({
+    id: chatId,
+    messages: initialMessages,
+    transport,
+    sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
+  });
   const runtime = useAISDKRuntime(chat);
+  const { addToolApprovalResponse } = chat;
+  const proposals = useMemo<ProposalContextValue>(
+    () => ({
+      chatId,
+      messages: chat.messages,
+      ready: chat.status === "ready" || chat.status === "error",
+      respond: (id, approved) => void addToolApprovalResponse({ id, approved }),
+    }),
+    [chatId, chat.messages, chat.status, addToolApprovalResponse],
+  );
 
   // Keep the chat in the URL once it has messages, so a reload restores it.
   const started = chat.messages.length > 0;
@@ -142,52 +178,54 @@ export function AssistantChat({ chatId, initialMessages }: { chatId: string; ini
   }, [started, chatId]);
 
   return (
-    <AssistantRuntimeProvider runtime={runtime}>
-      <ThreadPrimitive.Root className="flex min-h-[60vh] flex-col rounded-lg border bg-background">
-        <ThreadPrimitive.Viewport className="flex flex-1 flex-col gap-4 overflow-y-auto p-4">
-          <ThreadPrimitive.Empty>
-            <div className="flex flex-col gap-3 py-8 text-center">
-              <p className="text-sm text-muted-foreground">Ask about your spending, budgets, bills or balances.</p>
-              <div className="flex flex-wrap justify-center gap-2">
-                {SUGGESTIONS.map((s) => (
-                  <ThreadPrimitive.Suggestion key={s} prompt={s} send asChild>
-                    <Button variant="outline" size="sm" className="h-auto whitespace-normal text-left">
-                      {s}
-                    </Button>
-                  </ThreadPrimitive.Suggestion>
-                ))}
+    <ProposalContext.Provider value={proposals}>
+      <AssistantRuntimeProvider runtime={runtime}>
+        <ThreadPrimitive.Root className="flex min-h-[60vh] flex-col rounded-lg border bg-background">
+          <ThreadPrimitive.Viewport className="flex flex-1 flex-col gap-4 overflow-y-auto p-4">
+            <ThreadPrimitive.Empty>
+              <div className="flex flex-col gap-3 py-8 text-center">
+                <p className="text-sm text-muted-foreground">Ask about your spending, budgets, bills or balances.</p>
+                <div className="flex flex-wrap justify-center gap-2">
+                  {SUGGESTIONS.map((s) => (
+                    <ThreadPrimitive.Suggestion key={s} prompt={s} send asChild>
+                      <Button variant="outline" size="sm" className="h-auto whitespace-normal text-left">
+                        {s}
+                      </Button>
+                    </ThreadPrimitive.Suggestion>
+                  ))}
+                </div>
               </div>
-            </div>
-          </ThreadPrimitive.Empty>
-          <ThreadPrimitive.Messages components={{ UserMessage, AssistantMessage }} />
-          {chat.error && (
-            <p role="alert" className="text-sm text-destructive">
-              {errorText(chat.error)}
-            </p>
-          )}
-        </ThreadPrimitive.Viewport>
-        <ComposerPrimitive.Root className="flex items-end gap-2 border-t p-3">
-          <ComposerPrimitive.Input
-            placeholder="Ask about your money…"
-            maxLength={2000}
-            className="min-h-9 flex-1 resize-none bg-transparent px-1 py-2 text-sm outline-none"
-          />
-          <ThreadPrimitive.If running={false}>
-            <ComposerPrimitive.Send asChild>
-              <Button size="icon" aria-label="Send">
-                <ArrowUp />
-              </Button>
-            </ComposerPrimitive.Send>
-          </ThreadPrimitive.If>
-          <ThreadPrimitive.If running>
-            <ComposerPrimitive.Cancel asChild>
-              <Button size="icon" variant="outline" aria-label="Stop">
-                <Square />
-              </Button>
-            </ComposerPrimitive.Cancel>
-          </ThreadPrimitive.If>
-        </ComposerPrimitive.Root>
-      </ThreadPrimitive.Root>
-    </AssistantRuntimeProvider>
+            </ThreadPrimitive.Empty>
+            <ThreadPrimitive.Messages components={{ UserMessage, AssistantMessage }} />
+            {chat.error && (
+              <p role="alert" className="text-sm text-destructive">
+                {errorText(chat.error)}
+              </p>
+            )}
+          </ThreadPrimitive.Viewport>
+          <ComposerPrimitive.Root className="flex items-end gap-2 border-t p-3">
+            <ComposerPrimitive.Input
+              placeholder="Ask about your money…"
+              maxLength={2000}
+              className="min-h-9 flex-1 resize-none bg-transparent px-1 py-2 text-sm outline-none"
+            />
+            <ThreadPrimitive.If running={false}>
+              <ComposerPrimitive.Send asChild>
+                <Button size="icon" aria-label="Send">
+                  <ArrowUp />
+                </Button>
+              </ComposerPrimitive.Send>
+            </ThreadPrimitive.If>
+            <ThreadPrimitive.If running>
+              <ComposerPrimitive.Cancel asChild>
+                <Button size="icon" variant="outline" aria-label="Stop">
+                  <Square />
+                </Button>
+              </ComposerPrimitive.Cancel>
+            </ThreadPrimitive.If>
+          </ComposerPrimitive.Root>
+        </ThreadPrimitive.Root>
+      </AssistantRuntimeProvider>
+    </ProposalContext.Provider>
   );
 }
