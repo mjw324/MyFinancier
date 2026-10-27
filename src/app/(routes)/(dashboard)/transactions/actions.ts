@@ -80,6 +80,8 @@ export async function updateTransactionOverridesAction(
 
   const customName = normalize(parsed.data.customName);
   const customCategory = normalize(parsed.data.customCategory);
+  // A hand-set category is the user's own: category rules never replace it.
+  const customCategorySource = customCategory ? ("manual" as const) : null;
   const userId = session.user.id;
 
   const [tx] = await db
@@ -112,7 +114,7 @@ export async function updateTransactionOverridesAction(
 
     await db
       .update(transactions)
-      .set({ customName, customCategory })
+      .set({ customName, customCategory, customCategorySource })
       .where(
         and(
           eq(transactions.userId, userId),
@@ -122,7 +124,7 @@ export async function updateTransactionOverridesAction(
   } else {
     await db
       .update(transactions)
-      .set({ customName, customCategory })
+      .set({ customName, customCategory, customCategorySource })
       .where(
         and(
           eq(transactions.id, parsed.data.transactionId),

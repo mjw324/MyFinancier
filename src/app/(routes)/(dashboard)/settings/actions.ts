@@ -18,6 +18,7 @@ import {
   syncItemNow,
 } from "@/lib/plaid/jobs";
 import { postProcessTransactions } from "@/lib/plaid/post-process";
+import { applyCategoryRules } from "@/lib/categorize/rules";
 import { isTerminalItemStatus } from "@/lib/plaid/sync-requests";
 import { PLAID_ERROR_MESSAGES } from "@/lib/plaid/types";
 import { decrypt } from "@/lib/utils/encryption";
@@ -164,8 +165,10 @@ export async function resetTransactionCustomizationsAction() {
 
   await db
     .update(transactions)
-    .set({ customName: null, customCategory: null })
+    .set({ customName: null, customCategory: null, customCategorySource: null })
     .where(eq(transactions.userId, userId));
+  // Category rules still hold: put their categories back.
+  await applyCategoryRules(userId);
 
   await db
     .update(recurringStreams)

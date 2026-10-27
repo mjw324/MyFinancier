@@ -78,6 +78,13 @@
       "when": 1793067119027,
       "tag": "0010_insight_candidates",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1793068049667,
+      "tag": "0011_category_suggestions",
+      "breakpoints": true
     }
   ]
 }

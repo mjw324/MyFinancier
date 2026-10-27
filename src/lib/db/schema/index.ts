@@ -9,4 +9,5 @@ export * from "./spending-rules";
 export * from "./user-preferences";
 export * from "./ai";
 export * from "./insights";
+export * from "./categorize";
 export * from "./relations";

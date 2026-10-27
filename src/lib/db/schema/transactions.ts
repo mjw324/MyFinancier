@@ -35,6 +35,10 @@ export const transactions = pgTable(
     pfcConfidenceLevel: text("pfc_confidence_level"),
     customName: text("custom_name"),
     customCategory: text("custom_category"),
+    // Who set custom_category: 'manual' (the user, also legacy rows with
+    // NULL), 'rule' (a category_rules match) or 'suggestion' (an AI
+    // suggestion the user accepted). Rules never overwrite manual/suggestion.
+    customCategorySource: text("custom_category_source"),
     pending: boolean("pending").default(false),
     recurringStreamId: text("recurring_stream_id").references(
       () => recurringStreams.streamId,
@@ -88,6 +92,10 @@ export const transactions = pgTable(
     check(
       "transactions_refund_source_check",
       sql`${table.refundSource} IS NULL OR ${table.refundSource} IN ('auto','manual')`,
+    ),
+    check(
+      "transactions_custom_category_source_check",
+      sql`${table.customCategorySource} IS NULL OR ${table.customCategorySource} IN ('manual','rule','suggestion')`,
     ),
     check(
       "transactions_flow_class_source_check",
