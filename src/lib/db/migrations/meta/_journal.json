@@ -85,6 +85,13 @@
       "when": 1793068049667,
       "tag": "0011_category_suggestions",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1793069194321,
+      "tag": "0012_ai_chat",
+      "breakpoints": true
     }
   ]
 }
