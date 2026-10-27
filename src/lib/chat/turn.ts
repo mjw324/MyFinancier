@@ -7,7 +7,13 @@
  * Order of checks: kill switch → input → opt-in → monthly budget → rate limit
  * → chat ownership. History is loaded from the database (never trusted from
  * the client, so earlier tool outputs can't be forged) and validated against
- * the current tools; the client sends only its new message.
+ * the current tools; the client sends only its new message, or its
+ * decisions on pending proposals (approvals), which are applied to the
+ * stored message by approval id.
+ *
+ * Proposals (lib/chat/proposals.ts) go through buildToolApproval: checked
+ * ones wait for the user, failing ones are denied automatically. A user who
+ * sends a new question instead of deciding leaves them denied.
  *
  * After the model finishes, deterministic guards run on the answer
  * (lib/chat/guards.ts) and their verdict is streamed and saved as a
@@ -39,7 +45,7 @@ import { checkFigures, checkScope, collectGrounding, SCOPE_REDIRECT } from "./gu
 import { chatInstructions } from "./prompt";
 import { buildSnapshot } from "./snapshot";
 import { CHAT_ID_RE, claimChat, loadChatMessages, MAX_HISTORY_MESSAGES, saveChatMessages } from "./store";
-import { buildTools } from "./tools";
+import { buildToolApproval, buildTools } from "./tools";
 import { chatDataSchemas, type ChatUIMessage, type GuardData } from "./types";
 
 export const MAX_USER_TEXT = 2_000;
@@ -47,7 +53,7 @@ export const MAX_USER_TEXT = 2_000;
 export const MAX_STEPS = 6;
 export const CHAT_TIMEOUT = { totalMs: 90_000, stepMs: 45_000, toolMs: 15_000 } as const;
 
-export const ChatRequestSchema = z.object({
+const MessageRequestSchema = z.object({
   id: z.string().regex(CHAT_ID_RE),
   message: z.object({
     id: z.string().min(1).max(100),
@@ -58,6 +64,54 @@ export const ChatRequestSchema = z.object({
       .max(10),
   }),
 });
+
+/** The user's decisions on the last message's pending proposals. */
+const ApprovalRequestSchema = z.object({
+  id: z.string().regex(CHAT_ID_RE),
+  approvals: z
+    .array(z.object({ id: z.string().min(1).max(200), approved: z.boolean() }).strict())
+    .min(1)
+    .max(10),
+});
+
+export const ChatRequestSchema = z.union([MessageRequestSchema, ApprovalRequestSchema]);
+
+type ToolPart = Extract<ChatUIMessage["parts"][number], { toolCallId: string }>;
+
+/** Proposals still waiting for the user in a message. */
+export function pendingApprovals(message: ChatUIMessage | undefined): ToolPart[] {
+  if (!message || message.role !== "assistant") return [];
+  return message.parts.filter(
+    (p): p is ToolPart => isToolUIPart(p) && p.state === "approval-requested" && !p.approval.isAutomatic,
+  ) as ToolPart[];
+}
+
+/** The message with its pending proposals decided (true/false per approval id). */
+export function decideApprovals(message: ChatUIMessage, decisions: Map<string, boolean>, reason?: string): ChatUIMessage {
+  return {
+    ...message,
+    parts: message.parts.map((p) => {
+      if (!isToolUIPart(p) || p.state !== "approval-requested" || !decisions.has(p.approval.id)) return p;
+      return { ...p, state: "approval-responded", approval: { ...p.approval, approved: decisions.get(p.approval.id)!, reason } } as unknown as typeof p;
+    }),
+  };
+}
+
+/** A user who asks something new instead of deciding has declined. */
+function declinePending(message: ChatUIMessage): ChatUIMessage {
+  const pending = pendingApprovals(message);
+  if (pending.length === 0) return message;
+  const decisions = new Map(pending.map((p) => [(p as { approval: { id: string } }).approval.id, false]));
+  const reason = "The person moved on without approving.";
+  return {
+    ...message,
+    parts: decideApprovals(message, decisions, reason).parts.map((p) =>
+      isToolUIPart(p) && p.state === "approval-responded" && decisions.has(p.approval.id)
+        ? ({ ...p, state: "output-denied", approval: { ...p.approval, approved: false, reason } } as unknown as typeof p)
+        : p,
+    ),
+  };
+}
 
 type ApiError = { success: false; error: string };
 
@@ -117,13 +171,17 @@ export async function runChatTurn(input: {
   const parsed = ChatRequestSchema.safeParse(input.body);
   if (!parsed.success) return errorResponse(400, "Invalid request.");
   const chatId = parsed.data.id;
-  const text = parsed.data.message.parts
-    .filter((p) => p.type === "text" && typeof p.text === "string")
-    .map((p) => p.text)
-    .join("\n")
-    .trim();
-  if (!text) return errorResponse(400, "Type a question first.");
-  if (text.length > MAX_USER_TEXT) return errorResponse(400, `Questions are limited to ${MAX_USER_TEXT} characters.`);
+  const request = parsed.data;
+  let text = "";
+  if ("message" in request) {
+    text = request.message.parts
+      .filter((p) => p.type === "text" && typeof p.text === "string")
+      .map((p) => p.text)
+      .join("\n")
+      .trim();
+    if (!text) return errorResponse(400, "Type a question first.");
+    if (text.length > MAX_USER_TEXT) return errorResponse(400, `Questions are limited to ${MAX_USER_TEXT} characters.`);
+  }
 
   if (!(await getAiConsent(userId)).optedIn) {
     return errorResponse(403, "Turn on AI features in Settings to use the assistant.");
@@ -140,7 +198,8 @@ export async function runChatTurn(input: {
   }
   if (!(await claimChat(userId, chatId, now))) return errorResponse(404, "Chat not found.");
 
-  const tools = buildTools({ userId, today, timeZone });
+  const scope = { userId, today, timeZone };
+  const tools = buildTools(scope);
   let history: ChatUIMessage[] = [];
   const stored = await loadChatMessages(userId, chatId);
   if (stored.length > 0) {
@@ -153,13 +212,31 @@ export async function runChatTurn(input: {
     }
   }
 
-  const userMessage: ChatUIMessage = { id: parsed.data.message.id, role: "user", parts: [{ type: "text", text }] };
-  // Re-sending a message (regenerate) replaces it and everything after it.
-  const at = history.findIndex((m) => m.id === userMessage.id);
-  const messages = [...(at >= 0 ? history.slice(0, at) : history), userMessage].slice(-MAX_HISTORY_MESSAGES);
+  let messages: ChatUIMessage[];
+  if ("approvals" in request) {
+    // Decisions apply to the stored last message only; every pending
+    // proposal must be decided, and only those.
+    const last = history.at(-1);
+    const pending = pendingApprovals(last).map((p) => (p as { approval: { id: string } }).approval.id);
+    const decisions = new Map(request.approvals.map((a) => [a.id, a.approved]));
+    if (!last || pending.length === 0 || pending.length !== decisions.size || pending.some((id) => !decisions.has(id))) {
+      return errorResponse(409, "That suggestion is no longer waiting for an answer.");
+    }
+    const decided = decideApprovals(
+      { ...last, parts: last.parts.filter((p) => p.type !== "data-guard") },
+      decisions,
+    );
+    messages = [...history.slice(0, -1), decided].slice(-MAX_HISTORY_MESSAGES);
+  } else {
+    const userMessage: ChatUIMessage = { id: request.message.id, role: "user", parts: [{ type: "text", text }] };
+    // Re-sending a message (regenerate) replaces it and everything after it.
+    const at = history.findIndex((m) => m.id === userMessage.id);
+    const earlier = (at >= 0 ? history.slice(0, at) : history).map((m, i, all) => (i === all.length - 1 ? declinePending(m) : m));
+    messages = [...earlier, userMessage].slice(-MAX_HISTORY_MESSAGES);
 
-  if (!checkScope(text, "request").allowed) {
-    return redirectResponse(userId, chatId, messages, now);
+    if (!checkScope(text, "request").allowed) {
+      return redirectResponse(userId, chatId, messages, now);
+    }
   }
 
   const snapshot = await buildSnapshot(userId, today);
@@ -179,6 +256,7 @@ export async function runChatTurn(input: {
           instructions: chatInstructions({ today, timeZone, snapshotText: snapshot.text, memories: snapshot.memories }),
           messages: await convertToModelMessages(messages, { tools, ignoreIncompleteToolCalls: true }),
           tools,
+          toolApproval: buildToolApproval(scope),
           stopWhen: isStepCount(MAX_STEPS),
           timeout: CHAT_TIMEOUT,
           maxRetries: 1,
@@ -210,8 +288,11 @@ export async function runChatTurn(input: {
         if (!answer) return;
         const guard = guardAnswer(answer, { ...snapshot.data, memories: snapshot.memories.notes });
         writer.write({ type: "data-guard", data: guard });
+        // Saved before the client hears "finish": a proposal card reads the
+        // stored transcript as soon as the stream ends.
+        const continued = messages.at(-1)?.id === answer.id;
+        await saveChatMessages(userId, chatId, [...(continued ? messages.slice(0, -1) : messages), applyGuard(answer, guard)]);
         writer.write({ type: "finish" });
-        await saveChatMessages(userId, chatId, [...messages, applyGuard(answer, guard)]);
       } finally {
         finish();
       }

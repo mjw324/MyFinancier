@@ -1,5 +1,8 @@
 /**
- * The chat assistant's tools: read-only, built per request for one user.
+ * The chat assistant's tools, built per request for one user: eight
+ * read-only tools, plus three propose* tools that only ever lead to a change
+ * after the user confirms it (lib/chat/proposals.ts; buildToolApproval holds
+ * them for approval, and their execute only reads back the outcome).
  *
  * - userId comes from the Better Auth session through this closure and never
  *   appears in an input schema; an accountId argument is checked against the
@@ -15,7 +18,7 @@
  * keep them byte-identical across users and deploys (nothing dynamic here).
  */
 
-import { tool, type ToolSet } from "ai";
+import { tool, type ToolApprovalConfiguration, type ToolSet } from "ai";
 import { z } from "zod";
 import { bucketLabel } from "@/lib/analytics/labels";
 import {
@@ -41,6 +44,14 @@ import { parseTransactionQuery } from "@/lib/transactions/query";
 import { toDateParam } from "@/lib/utils/date-ranges";
 import { displayName, formatCategory } from "@/lib/utils/format";
 import { roundMoney } from "@/lib/utils/money";
+import {
+  BudgetInputSchema,
+  checkProposal,
+  MemoryInputSchema,
+  proposalOutcome,
+  RECATEGORIZE_CATEGORIES,
+  RecategorizeInputSchema,
+} from "./proposals";
 import { change, money, percent, RangeSchema, resolveRange, type ResolvedRange } from "./values";
 
 export interface ToolScope {
@@ -323,6 +334,7 @@ export function buildTools(scope: ToolScope) {
           transactions: rows.map((t) => {
             const amount = Number(t.amount);
             return {
+              id: t.id,
               date: toDateParam(t.date),
               ...label(displayName({ customName: t.customName, merchantName: t.merchantName, fallback: t.name }), {
                 flowClass: t.flowClass,
@@ -440,9 +452,53 @@ export function buildTools(scope: ToolScope) {
         };
       },
     }),
+
+    proposeRecategorize: tool({
+      description: `Propose changing the category of specific transactions. Nothing changes unless the person approves the card the app shows. Only when the person asked to recategorize; use ids from searchTransactions. Categories: ${RECATEGORIZE_CATEGORIES}.`,
+      inputSchema: RecategorizeInputSchema,
+      execute: async (input) => proposalOutcome(userId, "proposeRecategorize", input),
+    }),
+
+    proposeBudget: tool({
+      description:
+        "Propose creating a new budget starting today. Nothing changes unless the person approves the card the app shows. Only when the person asked for a budget.",
+      inputSchema: BudgetInputSchema,
+      execute: async (input) => proposalOutcome(userId, "proposeBudget", input),
+    }),
+
+    proposeMemory: tool({
+      description:
+        "Propose saving a short note about the person's situation or goals (for example 'saving for a car by June') for future chats. Nothing is saved unless the person approves. Only when the person asked you to remember something; never account numbers, passwords or other people's details.",
+      inputSchema: MemoryInputSchema,
+      execute: async (input) => proposalOutcome(userId, "proposeMemory", input),
+    }),
   } satisfies ToolSet;
 
   return tools;
+}
+
+/**
+ * Approval policy for one turn: read-only tools run as before; a proposal
+ * is checked against the user's own data first (lib/chat/proposals.ts) and
+ * denied automatically, with a reason the model sees, when it fails;
+ * otherwise it waits for the user's decision.
+ *
+ * The SDK runs this again when the user's decision comes back. By then an
+ * applied budget or memory fails the check (it already exists), so a
+ * proposal whose change is already in place still defers to the user.
+ */
+export function buildToolApproval(scope: ToolScope): ToolApprovalConfiguration<ChatTools, never> {
+  const gate = (kind: "proposeRecategorize" | "proposeBudget" | "proposeMemory") => async (input: unknown) => {
+    const check = await checkProposal(scope.userId, kind, input, scope.today);
+    if (check.ok) return "user-approval" as const;
+    const outcome = await proposalOutcome(scope.userId, kind, input).catch(() => null);
+    return outcome?.status === "applied" ? ("user-approval" as const) : { type: "denied" as const, reason: check.reason };
+  };
+  return {
+    proposeRecategorize: gate("proposeRecategorize"),
+    proposeBudget: gate("proposeBudget"),
+    proposeMemory: gate("proposeMemory"),
+  };
 }
 
 /** Occurrences per month by Plaid frequency. Unknown frequencies get no monthly figure. */
@@ -464,4 +520,7 @@ export const CHAT_TOOL_NAMES = [
   "getBudgetStatus",
   "getRecurring",
   "getAccounts",
+  "proposeRecategorize",
+  "proposeBudget",
+  "proposeMemory",
 ] as const satisfies ReadonlyArray<keyof ChatTools>;

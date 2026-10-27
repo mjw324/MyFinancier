@@ -12,9 +12,11 @@ import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import { SpendingOverTime } from "@/components/charts/spending-over-time";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
 import { Progress } from "@/components/ui/progress";
+import type { ProposalToolName } from "@/lib/chat/proposals";
 import type { ChatTools } from "@/lib/chat/tools";
 
-type Outputs = { [K in keyof InferUITools<ChatTools>]: InferUITools<ChatTools>[K]["output"] };
+type ReadTool = Exclude<keyof InferUITools<ChatTools>, ProposalToolName>;
+type Outputs = { [K in ReadTool]: InferUITools<ChatTools>[K]["output"] };
 type Ok<T> = Exclude<T, { error: string }>;
 type Range = { from: string; to: string; label: string; isPartial: boolean };
 

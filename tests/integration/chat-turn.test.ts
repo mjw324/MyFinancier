@@ -238,7 +238,19 @@ describe("prompt layout", () => {
     // The per-user snapshot stays within its token budget (~4 chars per token).
     for (const s of [a.calls[0].system[1], b.calls[0].system[1]]) expect(s.length / 4).toBeLessThan(3_000);
     expect(pa.tools?.map((t) => t.name).sort()).toEqual(
-      ["compareSpending", "getAccounts", "getBudgetStatus", "getCashflow", "getDailySpending", "getRecurring", "getSpendingSummary", "searchTransactions"],
+      [
+        "compareSpending",
+        "getAccounts",
+        "getBudgetStatus",
+        "getCashflow",
+        "getDailySpending",
+        "getRecurring",
+        "getSpendingSummary",
+        "proposeBudget",
+        "proposeMemory",
+        "proposeRecategorize",
+        "searchTransactions",
+      ],
     );
   });
 
