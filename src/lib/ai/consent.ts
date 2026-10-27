@@ -8,10 +8,10 @@ import { isAiEnabled } from "./models";
  * changes in substance; the version a user agreed to is stored with the
  * time they agreed.
  */
-export const AI_CONSENT_VERSION = "2026-10-27";
+export const AI_CONSENT_VERSION = "2026-10-28";
 
 export const AI_CONSENT_TEXT =
-  "MyFinancier sends our AI provider summaries it computed from your transactions (totals, dates, category and merchant names) to write your weekly digest and explain your charts, cleaned transaction descriptions to suggest categories, and the searches you type to find transactions. It never sends account numbers, bank credentials, your name or your email, and names of people you pay are replaced. Every figure is calculated by MyFinancier, not by the AI, and no category changes until you accept it. You can turn this off at any time.";
+  "MyFinancier sends our AI provider summaries it computed from your transactions (totals, dates, category and merchant names) to write your weekly digest and explain your charts, cleaned transaction descriptions to suggest categories, the searches you type to find transactions, and, when you use the AI assistant, your questions together with the totals, balances, budgets, bills and cleaned transaction details it looks up to answer them. It never sends account numbers, bank credentials, your name or your email, and names of people you pay are replaced. Every figure is calculated by MyFinancier, not by the AI, and no category changes until you accept it. Assistant chats are kept for 90 days, and you can delete them sooner. You can turn this off at any time.";
 
 export interface AiConsent {
   optedIn: boolean;
